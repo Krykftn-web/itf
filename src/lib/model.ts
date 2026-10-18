@@ -52,24 +52,58 @@ export const CAMPUSES = [
   { key: "", label: "Herhangi Bir Yerleşke (İlk Boş)" },
 ];
 
-export const COMMON_BRANCHES = [
-  "İç Hastalıkları",
-  "Kardiyoloji",
-  "Göz Hastalıkları",
-  "Kulak Burun Boğaz Hastalıkları",
-  "Ortopedi ve Travmatoloji",
-  "Nöroloji",
-  "Genel Cerrahi",
-  "Beyin ve Sinir Cerrahisi",
-  "Üroloji",
-  "Deri ve Zührevi Hastalıklar (Cildiye)",
-  "Fiziksel Tıp ve Rehabilitasyon",
-  "Göğüs Hastalıkları",
-  "Enfeksiyon Hastalıkları",
-  "Ruh Sağlığı ve Hastalıkları (Psikiyatri)",
-  "Kadın Hastalıkları ve Doğum",
-  "Çocuk Sağlığı ve Hastalıkları",
-  "custom",
+export type BranchItem = {
+  key: string;
+  name: string;
+  category: "Cerrahi" | "Dahili" | "Çocuk & Ruh Sağlığı" | "Diğer";
+};
+
+export const COMMON_BRANCHES: BranchItem[] = [
+  // Cerrahi Branşlar
+  { key: "Kalp ve Damar Cerrahisi", name: "Kalp ve Damar Cerrahisi", category: "Cerrahi" },
+  { key: "Genel Cerrahi", name: "Genel Cerrahi", category: "Cerrahi" },
+  { key: "Beyin ve Sinir Cerrahisi", name: "Beyin ve Sinir Cerrahisi (Nöroşirürji)", category: "Cerrahi" },
+  { key: "Ortopedi ve Travmatoloji", name: "Ortopedi ve Travmatoloji", category: "Cerrahi" },
+  { key: "Göz Hastalıkları", name: "Göz Hastalıkları", category: "Cerrahi" },
+  { key: "Kulak Burun Boğaz Hastalıkları", name: "Kulak Burun Boğaz Hastalıkları (KBB)", category: "Cerrahi" },
+  { key: "Üroloji", name: "Üroloji", category: "Cerrahi" },
+  { key: "Göğüs Cerrahisi", name: "Göğüs Cerrahisi", category: "Cerrahi" },
+  { key: "Plastik, Rekonstrüktif ve Estetik Cerrahi", name: "Plastik, Rekonstrüktif ve Estetik Cerrahi", category: "Cerrahi" },
+  { key: "Çocuk Cerrahisi", name: "Çocuk Cerrahisi", category: "Cerrahi" },
+  { key: "Kadın Hastalıkları ve Doğum", name: "Kadın Hastalıkları ve Doğum", category: "Cerrahi" },
+
+  // Dahili Branşlar
+  { key: "İç Hastalıkları", name: "İç Hastalıkları (Dahiliye)", category: "Dahili" },
+  { key: "Kardiyoloji", name: "Kardiyoloji (Kalp Hastalıkları)", category: "Dahili" },
+  { key: "Nöroloji", name: "Nöroloji (Beyin & Sinir Hastalıkları)", category: "Dahili" },
+  { key: "Göğüs Hastalıkları", name: "Göğüs Hastalıkları", category: "Dahili" },
+  { key: "Gastroenteroloji", name: "Gastroenteroloji (Mide & Bağırsak)", category: "Dahili" },
+  { key: "Endokrinoloji ve Metabolizma Hastalıkları", name: "Endokrinoloji ve Metabolizma (Diyabet)", category: "Dahili" },
+  { key: "Nefroloji", name: "Nefroloji (Böbrek Hastalıkları)", category: "Dahili" },
+  { key: "Romatoloji", name: "Romatoloji", category: "Dahili" },
+  { key: "Hematoloji", name: "Hematoloji (Kan Hastalıkları)", category: "Dahili" },
+  { key: "Tıbbi Onkoloji", name: "Tıbbi Onkoloji (Kanser)", category: "Dahili" },
+  { key: "Enfeksiyon Hastalıkları", name: "Enfeksiyon Hastalıkları ve Klinik Mikrobiyoloji", category: "Dahili" },
+  { key: "Deri ve Zührevi Hastalıklar", name: "Deri ve Zührevi Hastalıklar (Cildiye)", category: "Dahili" },
+  { key: "Fiziksel Tıp ve Rehabilitasyon", name: "Fiziksel Tıp ve Rehabilitasyon (FTR)", category: "Dahili" },
+  { key: "İmmünoloji ve Alerji Hastalıkları", name: "İmmünoloji ve Alerji Hastalıkları", category: "Dahili" },
+  { key: "Geriatri", name: "Geriatri (Yaşlı Sağlığı)", category: "Dahili" },
+  { key: "Algoloji", name: "Algoloji (Ağrı Polikliniği)", category: "Dahili" },
+
+  // Çocuk & Ruh Sağlığı
+  { key: "Çocuk Sağlığı ve Hastalıkları", name: "Çocuk Sağlığı ve Hastalıkları (Pediatri)", category: "Çocuk & Ruh Sağlığı" },
+  { key: "Çocuk Kardiyolojisi", name: "Çocuk Kardiyolojisi", category: "Çocuk & Ruh Sağlığı" },
+  { key: "Çocuk ve Ergen Ruh Sağlığı", name: "Çocuk ve Ergen Ruh Sağlığı", category: "Çocuk & Ruh Sağlığı" },
+  { key: "Ruh Sağlığı ve Hastalıkları", name: "Ruh Sağlığı ve Hastalıkları (Psikiyatri)", category: "Çocuk & Ruh Sağlığı" },
+
+  // Diğer
+  { key: "Radyasyon Onkolojisi", name: "Radyasyon Onkolojisi", category: "Diğer" },
+  { key: "Nükleer Tıp", name: "Nükleer Tıp", category: "Diğer" },
+  { key: "Radyoloji", name: "Radyoloji", category: "Diğer" },
+  { key: "Tıbbi Genetik", name: "Tıbbi Genetik", category: "Diğer" },
+  { key: "Sualtı Hekimliği ve Hiperbarik Tıp", name: "Sualtı Hekimliği ve Hiperbarik Tıp", category: "Diğer" },
+  { key: "Spor Hekimliği", name: "Spor Hekimliği", category: "Diğer" },
+  { key: "Ağız, Diş ve Çene Cerrahisi", name: "Ağız, Diş ve Çene Cerrahisi", category: "Diğer" },
 ];
 
 export type Target = {

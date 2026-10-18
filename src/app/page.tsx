@@ -733,7 +733,40 @@ const Dashboard = ({ user }: { user: User }) => {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Ana Branş</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-ink-soft">Ana Branş</label>
+                  <span className="text-[10px] text-muted">Hızlı Seçim:</span>
+                </div>
+                
+                {/* Hızlı Seçim Butonları */}
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {[
+                    { key: "Kalp ve Damar Cerrahisi", label: "❤️ Kalp Damar" },
+                    { key: "İç Hastalıkları", label: "🩺 Dahiliye" },
+                    { key: "Kardiyoloji", label: "🫀 Kardiyoloji" },
+                    { key: "Göz Hastalıkları", label: "👁️ Göz" },
+                    { key: "Kulak Burun Boğaz Hastalıkları", label: "👂 KBB" },
+                    { key: "Ortopedi ve Travmatoloji", label: "🦴 Ortopedi" },
+                  ].map((quick) => (
+                    <button
+                      type="button"
+                      key={quick.key}
+                      onClick={() => {
+                        setTBranch(quick.key);
+                        if (quick.key === "İç Hastalıkları") setTRoom("Dahiliye 21");
+                        else setTRoom("");
+                      }}
+                      className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold border transition ${
+                        tBranch === quick.key
+                          ? "bg-accent text-white border-accent shadow-xs"
+                          : "bg-white text-ink-soft border-line hover:border-accent/40"
+                      }`}
+                    >
+                      {quick.label}
+                    </button>
+                  ))}
+                </div>
+
                 <select
                   value={tBranch}
                   onChange={(e) => {
@@ -744,11 +777,35 @@ const Dashboard = ({ user }: { user: User }) => {
                   }}
                   className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent"
                 >
-                  {COMMON_BRANCHES.map((b) => (
-                    <option key={b} value={b}>
-                      {b === "custom" ? "✏️ Diğer (Özel Branş Yaz…)" : b}
-                    </option>
-                  ))}
+                  <optgroup label="── Cerrahi Branşlar ──">
+                    {COMMON_BRANCHES.filter((b) => b.category === "Cerrahi").map((b) => (
+                      <option key={b.key} value={b.key}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="── Dahili Branşlar ──">
+                    {COMMON_BRANCHES.filter((b) => b.category === "Dahili").map((b) => (
+                      <option key={b.key} value={b.key}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="── Çocuk & Ruh Sağlığı ──">
+                    {COMMON_BRANCHES.filter((b) => b.category === "Çocuk & Ruh Sağlığı").map((b) => (
+                      <option key={b.key} value={b.key}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="── Tanı & Diğer Branşlar ──">
+                    {COMMON_BRANCHES.filter((b) => b.category === "Diğer").map((b) => (
+                      <option key={b.key} value={b.key}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <option value="custom">✏️ Diğer (Özel Branş Yaz…)</option>
                 </select>
               </div>
             </div>
@@ -760,7 +817,7 @@ const Dashboard = ({ user }: { user: User }) => {
                 <input
                   type="text"
                   required
-                  placeholder="Örn: Kardiyoloji, Radyoloji, vb."
+                  placeholder="Örn: Kalp ve Damar Cerrahisi, Radyoloji, vb."
                   value={tCustomBranch}
                   onChange={(e) => setTCustomBranch(e.target.value)}
                   className="w-full rounded-xl border border-accent bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
