@@ -1,13 +1,94 @@
 "use client";
 
+import type { User } from "@krykftn/client";
+import { useAuth } from "@krykftn/client/react";
 import { useCallback, useEffect, useState } from "react";
 
-import { api } from "@/lib/kf.ts";
+import { api, kf } from "@/lib/kf.ts";
 import type { Job, State, Target } from "@/lib/model.ts";
 
 const visible = (): boolean => (typeof document === "undefined" ? true : document.visibilityState === "visible");
 
-export default function Home() {
+const IconGoogle = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      fill="#4285F4"
+      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17Z"
+    />
+    <path
+      fill="#34A853"
+      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24Z"
+    />
+    <path
+      fill="#FBBC05"
+      d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.17 0 9.97 0 12s.45 3.83 1.25 5.42l4.03-3.15Z"
+    />
+    <path
+      fill="#EA4335"
+      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98Z"
+    />
+  </svg>
+);
+
+const SignInGate = () => {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSignIn = async () => {
+    try {
+      setBusy(true);
+      setError(null);
+      await kf.auth.signInWithGoogle({ redirect: window.location.href });
+    } catch (err: unknown) {
+      setBusy(false);
+      setError(err instanceof Error ? err.message : "Giriş başlatılamadı");
+    }
+  };
+
+  return (
+    <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-4 py-12">
+      <div className="text-center">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-hospital-soft text-4xl shadow-sm">
+          🏥
+        </div>
+        <h1 className="text-2xl font-extrabold tracking-tight">İTF Randevu Botu</h1>
+        <p className="mt-2 text-sm text-muted">
+          İstanbul Tıp Fakültesi (Çapa) randevularını 20:00 açılışında sunucudan otomatik yakalar.
+        </p>
+      </div>
+
+      <div className="mt-8 rounded-2xl border border-line bg-paper p-5 shadow-sm space-y-3 text-xs text-muted">
+        <div className="flex items-center gap-3">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent font-bold">1</span>
+          <span>Google ile güvenle oturum açın</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent font-bold">2</span>
+          <span>Babanızın kimlik bilgilerini ve hedef polikliniği kaydedin</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent font-bold">3</span>
+          <span>Sunucumuz her akşam 20:00 randevu açılışında otomatik alsın</span>
+        </div>
+      </div>
+
+      <button
+        onClick={() => void handleSignIn()}
+        disabled={busy}
+        className="mt-8 flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-sm font-semibold text-slate-800 shadow-md transition hover:bg-slate-50 active:scale-[0.98] disabled:opacity-70 dark:bg-slate-100"
+      >
+        <IconGoogle />
+        <span>{busy ? "Google'a yönlendiriliyor…" : "Google ile Giriş Yap"}</span>
+      </button>
+
+      {error && (
+        <p className="mt-3 text-center text-xs text-hospital">{error}</p>
+      )}
+    </div>
+  );
+};
+
+const Dashboard = ({ user }: { user: User }) => {
   const [state, setState] = useState<State | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,23 +195,36 @@ export default function Home() {
   };
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-8">
-      {/* Üst Başlık */}
-      <header className="mb-6 flex items-center justify-between border-b border-line pb-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-hospital-soft text-2xl text-hospital">
-            🏥
+    <div className="mx-auto max-w-xl px-4 py-6">
+      {/* Üst Başlık & Kullanıcı Barı */}
+      <header className="mb-6 border-b border-line pb-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-hospital-soft text-2xl text-hospital">
+              🏥
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight">İTF Randevu Botu</h1>
+              <p className="text-xs text-muted">Çapa Tıp Fakültesi · 20:00 Otomatik Takip</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">İTF Randevu Botu</h1>
-            <p className="text-xs text-muted">Çapa Tıp Fakültesi · 20:00 Otomatik Takip</p>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-good-soft px-2.5 py-1 text-xs font-semibold text-good">
+              <span className="h-2 w-2 rounded-full bg-good animate-pulse"></span>
+              Server Hazır
+            </span>
           </div>
         </div>
-        <div className="text-right">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-good-soft px-2.5 py-1 text-xs font-semibold text-good">
-            <span className="h-2 w-2 rounded-full bg-good animate-pulse"></span>
-            Server Hazır
-          </span>
+
+        {/* Kullanıcı Bilgisi ve Çıkış */}
+        <div className="mt-3 flex items-center justify-between rounded-xl bg-paper-2 px-3 py-1.5 text-xs text-muted">
+          <span className="truncate">{user.email || user.displayName || "Giriş yapıldı"}</span>
+          <button
+            onClick={() => void kf.auth.signOut()}
+            className="font-medium text-hospital hover:underline ml-2 shrink-0"
+          >
+            Çıkış Yap
+          </button>
         </div>
       </header>
 
@@ -414,4 +508,25 @@ export default function Home() {
       )}
     </div>
   );
+};
+
+export default function Home() {
+  const { user, loading } = useAuth(kf);
+
+  if (loading && !user) 
+    return (
+      <div className="grid min-h-dvh place-items-center">
+        <div className="text-center text-sm text-muted">
+          <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+          Oturum kontrol ediliyor…
+        </div>
+      </div>
+    );
+  
+
+  if (!user || user.isAnonymous) 
+    return <SignInGate />;
+  
+
+  return <Dashboard user={user} />;
 }
