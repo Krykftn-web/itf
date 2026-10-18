@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { api, kf } from "@/lib/kf.ts";
 import {
+  CAMPUSES,
+  COMMON_BRANCHES,
   DAYS,
   isLive,
   type PersonInput,
@@ -212,8 +214,12 @@ const Dashboard = ({ user }: { user: User }) => {
   // New target modal/form toggle
   const [showTargetForm, setShowTargetForm] = useState(false);
   const [tPersonId, setTPersonId] = useState("");
-  const [tDay, setTDay] = useState("perşembe");
+  const [tCampus, setTCampus] = useState("Çapa");
+  const [tBranch, setTBranch] = useState("İç Hastalıkları");
+  const [tCustomBranch, setTCustomBranch] = useState("");
   const [tRoom, setTRoom] = useState("Dahiliye 21");
+  const [tCustomRoom, setTCustomRoom] = useState("");
+  const [tDay, setTDay] = useState("perşembe");
   const [tSlot, setTSlot] = useState("early");
 
   // Active console log expansion
@@ -300,18 +306,27 @@ const Dashboard = ({ user }: { user: User }) => {
       alert("Lütfen hedefin atanacağı kişiyi seçin.");
       return;
     }
+    const branchName = tBranch === "custom" ? tCustomBranch.trim() : tBranch.trim();
+    if (!branchName) {
+      alert("Lütfen geçerli bir branş seçin veya yazın.");
+      return;
+    }
+    const roomName = tRoom === "custom" ? tCustomRoom.trim() : tRoom.trim();
+
     try {
       setLoading(true);
       const input: TargetInput = {
         personId: tPersonId,
-        campus: "Çapa",
-        branch: "İç Hastalıkları",
-        polyclinics: [tRoom],
+        campus: tCampus.trim(),
+        branch: branchName,
+        polyclinics: roomName ? [roomName] : [],
         targetDay: tDay,
         slot: tSlot,
       };
       await api.addTarget(input);
       setShowTargetForm(false);
+      setTCustomBranch("");
+      setTCustomRoom("");
       await reload();
     } catch (err: unknown) {
       alert("Hata: " + (err instanceof Error ? err.message : String(err)));
@@ -700,7 +715,83 @@ const Dashboard = ({ user }: { user: User }) => {
               </select>
             </div>
 
+            {/* Yerleşke ve Branş Seçimi */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Yerleşke (Kampüs)</label>
+                <select
+                  value={tCampus}
+                  onChange={(e) => setTCampus(e.target.value)}
+                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent"
+                >
+                  {CAMPUSES.map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Ana Branş</label>
+                <select
+                  value={tBranch}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setTBranch(val);
+                    if (val === "İç Hastalıkları") setTRoom("Dahiliye 21");
+                    else if (val !== "custom") setTRoom("");
+                  }}
+                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent"
+                >
+                  {COMMON_BRANCHES.map((b) => (
+                    <option key={b} value={b}>
+                      {b === "custom" ? "✏️ Diğer (Özel Branş Yaz…)" : b}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Özel Branş Metin Kutusu (eğer custom seçildiyse) */}
+            {tBranch === "custom" && (
+              <div>
+                <label className="block text-xs font-medium text-accent mb-1">Özel Branş Adı</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Örn: Kardiyoloji, Radyoloji, vb."
+                  value={tCustomBranch}
+                  onChange={(e) => setTCustomBranch(e.target.value)}
+                  className="w-full rounded-xl border border-accent bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+              </div>
+            )}
+
+            {/* Poliklinik/Oda, Gün, Saat */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Poliklinik / Oda</label>
+                <select
+                  value={tRoom}
+                  onChange={(e) => setTRoom(e.target.value)}
+                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                >
+                  {tBranch === "İç Hastalıkları" ? (
+                    <>
+                      <option value="Dahiliye 21">Dahiliye 21 (Öncelikli)</option>
+                      <option value="Dahiliye">Herhangi bir Dahiliye Odası</option>
+                      <option value="custom">✏️ Özel Oda Yaz…</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="">İlk Açılan Oda (Farketmez)</option>
+                      <option value="custom">✏️ Özel Oda / Hekim Yaz…</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-xs font-medium text-ink-soft mb-1">Hedef Gün</label>
                 <select
@@ -713,18 +804,6 @@ const Dashboard = ({ user }: { user: User }) => {
                       {d.label}
                     </option>
                   ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Poliklinik / Oda</label>
-                <select
-                  value={tRoom}
-                  onChange={(e) => setTRoom(e.target.value)}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                >
-                  <option value="Dahiliye 21">Dahiliye 21 (Öncelikli)</option>
-                  <option value="Dahiliye">Herhangi bir Dahiliye Odası</option>
                 </select>
               </div>
 
@@ -743,6 +822,21 @@ const Dashboard = ({ user }: { user: User }) => {
                 </select>
               </div>
             </div>
+
+            {/* Özel Oda Metin Kutusu (eğer custom seçildiyse) */}
+            {tRoom === "custom" && (
+              <div>
+                <label className="block text-xs font-medium text-accent mb-1">Özel Poliklinik / Oda Adı</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Örn: Dahiliye 5, Poliklinik 2, vb."
+                  value={tCustomRoom}
+                  onChange={(e) => setTCustomRoom(e.target.value)}
+                  className="w-full rounded-xl border border-accent bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+              </div>
+            )}
 
             <button
               type="submit"
@@ -770,8 +864,11 @@ const Dashboard = ({ user }: { user: User }) => {
                       <span className="rounded-lg bg-blue-600 text-white px-2.5 py-0.5 text-xs font-bold shadow-xs">
                         👤 {person ? `${person.name} (${person.relation || "Kişi"})` : "Bilinmeyen Kişi"}
                       </span>
+                      <span className="rounded-lg bg-sky-100 text-sky-800 border border-sky-200 px-2 py-0.5 text-xs font-bold">
+                        📍 {target.campus || "Çapa"} · {target.branch || "İç Hastalıkları"}
+                      </span>
                       <span className="rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-xs font-bold">
-                        {target.polyclinics?.join(", ") || "Dahiliye 21"}
+                        🏥 {target.polyclinics?.length ? target.polyclinics.join(", ") : "İlk Boş Oda"}
                       </span>
                       <span className="rounded-lg bg-paper border border-line px-2 py-0.5 text-xs font-medium text-ink-soft">
                         📅 {target.targetDay ? target.targetDay.toUpperCase() : "İlk Boş Gün"}
@@ -781,9 +878,6 @@ const Dashboard = ({ user }: { user: User }) => {
                           ⏰ {slotInfo.label}
                         </span>
                       )}
-                    </div>
-                    <div className="text-[11px] text-muted">
-                      {target.campus} Yerleşkesi · {target.branch} Polikliniği
                     </div>
                   </div>
 

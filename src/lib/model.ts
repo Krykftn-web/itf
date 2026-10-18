@@ -46,6 +46,32 @@ export const DAYS = [
   { key: "", label: "Herhangi Bir Gün (İlk Boş)" },
 ];
 
+export const CAMPUSES = [
+  { key: "Çapa", label: "İstanbul Tıp Fakültesi (Çapa Yerleşkesi)" },
+  { key: "Hasdal", label: "Hasdal Yerleşkesi" },
+  { key: "", label: "Herhangi Bir Yerleşke (İlk Boş)" },
+];
+
+export const COMMON_BRANCHES = [
+  "İç Hastalıkları",
+  "Kardiyoloji",
+  "Göz Hastalıkları",
+  "Kulak Burun Boğaz Hastalıkları",
+  "Ortopedi ve Travmatoloji",
+  "Nöroloji",
+  "Genel Cerrahi",
+  "Beyin ve Sinir Cerrahisi",
+  "Üroloji",
+  "Deri ve Zührevi Hastalıklar (Cildiye)",
+  "Fiziksel Tıp ve Rehabilitasyon",
+  "Göğüs Hastalıkları",
+  "Enfeksiyon Hastalıkları",
+  "Ruh Sağlığı ve Hastalıkları (Psikiyatri)",
+  "Kadın Hastalıkları ve Doğum",
+  "Çocuk Sağlığı ve Hastalıkları",
+  "custom",
+];
+
 export type Target = {
   id: string;
   accountId: string; // personId
