@@ -214,13 +214,26 @@ const Dashboard = ({ user }: { user: User }) => {
   // New target modal/form toggle
   const [showTargetForm, setShowTargetForm] = useState(false);
   const [tPersonId, setTPersonId] = useState("");
-  const [tCampus, setTCampus] = useState("Çapa");
+  const [tCampus, setTCampus] = useState("Çapa Yerleşkesi - Merkez Kampüs");
   const [tBranch, setTBranch] = useState("İç Hastalıkları");
   const [tCustomBranch, setTCustomBranch] = useState("");
   const [tRoom, setTRoom] = useState("Dahiliye 21");
   const [tCustomRoom, setTCustomRoom] = useState("");
   const [tDay, setTDay] = useState("perşembe");
   const [tSlot, setTSlot] = useState("early");
+
+  const suggestCampusForBranch = (branch: string): string => {
+    const b = branch.toLowerCase();
+    if (b.includes("kalp")) return "Çapa Yerleşkesi - Ek Poliklinik Binası";
+    if (b.includes("göz")) return "Vatan Yerleşkesi";
+    if (b.includes("ortopedi") || b.includes("genel cerrahi") || b.includes("plastik") || b.includes("psikiyatri") || b.includes("çocuk cerrahisi")) 
+      return "Çapa Yerleşkesi - Ek Poliklinik Binası";
+    
+    if (b.includes("iç hastalık") || b.includes("dahiliye") || b.includes("kardiyo") || b.includes("nöroloji") || b.includes("çocuk")) 
+      return "Çapa Yerleşkesi - Merkez Kampüs";
+    
+    return "";
+  };
 
   // Active console log expansion
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
@@ -718,7 +731,7 @@ const Dashboard = ({ user }: { user: User }) => {
             {/* Yerleşke ve Branş Seçimi */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Yerleşke (Kampüs)</label>
+                <label className="block text-xs font-medium text-ink-soft mb-1">Yerleşke (Şube / Kampüs)</label>
                 <select
                   value={tCampus}
                   onChange={(e) => setTCampus(e.target.value)}
@@ -726,10 +739,13 @@ const Dashboard = ({ user }: { user: User }) => {
                 >
                   {CAMPUSES.map((c) => (
                     <option key={c.key} value={c.key}>
-                      {c.label}
+                      {c.name}
                     </option>
                   ))}
                 </select>
+                <p className="text-[11px] text-muted mt-1 leading-snug">
+                  ℹ️ {CAMPUSES.find((c) => c.key === tCampus)?.desc || "Otomatik veya serbest seçim"}
+                </p>
               </div>
 
               <div>
@@ -753,6 +769,8 @@ const Dashboard = ({ user }: { user: User }) => {
                       key={quick.key}
                       onClick={() => {
                         setTBranch(quick.key);
+                        const suggested = suggestCampusForBranch(quick.key);
+                        if (suggested) setTCampus(suggested);
                         if (quick.key === "İç Hastalıkları") setTRoom("Dahiliye 21");
                         else setTRoom("");
                       }}
@@ -772,6 +790,8 @@ const Dashboard = ({ user }: { user: User }) => {
                   onChange={(e) => {
                     const val = e.target.value;
                     setTBranch(val);
+                    const suggested = suggestCampusForBranch(val);
+                    if (suggested) setTCampus(suggested);
                     if (val === "İç Hastalıkları") setTRoom("Dahiliye 21");
                     else if (val !== "custom") setTRoom("");
                   }}

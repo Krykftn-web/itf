@@ -46,10 +46,43 @@ export const DAYS = [
   { key: "", label: "Herhangi Bir Gün (İlk Boş)" },
 ];
 
-export const CAMPUSES = [
-  { key: "Çapa", label: "İstanbul Tıp Fakültesi (Çapa Yerleşkesi)" },
-  { key: "Hasdal", label: "Hasdal Yerleşkesi" },
-  { key: "", label: "Herhangi Bir Yerleşke (İlk Boş)" },
+export type CampusItem = {
+  key: string;
+  name: string;
+  desc?: string;
+};
+
+export const CAMPUSES: CampusItem[] = [
+  {
+    key: "Çapa Yerleşkesi - Merkez Kampüs",
+    name: "Çapa Yerleşkesi - Merkez Kampüs",
+    desc: "Dahiliye, Kardiyoloji, Nöroloji, Göğüs, Çocuk vb.",
+  },
+  {
+    key: "Çapa Yerleşkesi - Ek Poliklinik Binası",
+    name: "Çapa Yerleşkesi - Ek Poliklinik Binası",
+    desc: "Kalp ve Damar Cerrahisi, Ortopedi, Genel Cerrahi, Psikiyatri vb.",
+  },
+  {
+    key: "Beyazıt Yerleşkesi",
+    name: "Beyazıt Yerleşkesi",
+    desc: "Aile Hekimliği, FTR, Cildiye, KBB, Dahiliye vb.",
+  },
+  {
+    key: "Esenyurt Yerleşkesi",
+    name: "Esenyurt Yerleşkesi",
+    desc: "Genel Cerrahi, Ortopedi, Göğüs, Nöroloji, Dahiliye vb.",
+  },
+  {
+    key: "Vatan Yerleşkesi",
+    name: "Vatan Yerleşkesi",
+    desc: "Göz Hastalıkları, KBB",
+  },
+  {
+    key: "",
+    name: "Herhangi Bir Yerleşke (İlk Boş)",
+    desc: "İlk açık yerleşkeden randevu alır",
+  },
 ];
 
 export type BranchItem = {
