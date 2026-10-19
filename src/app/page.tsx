@@ -324,7 +324,8 @@ const Dashboard = ({ user }: { user: User }) => {
       alert("Lütfen geçerli bir branş seçin veya yazın.");
       return;
     }
-    const roomName = tRoom === "custom" ? tCustomRoom.trim() : tRoom.trim();
+    const isBranchDahiliye = branchName.toLowerCase().includes("iç hastalık") || branchName.toLowerCase().includes("dahiliye");
+    const roomName = isBranchDahiliye ? (tRoom === "custom" ? tCustomRoom.trim() : tRoom.trim()) : "";
 
     try {
       setLoading(true);
@@ -845,75 +846,83 @@ const Dashboard = ({ user }: { user: User }) => {
               </div>
             )}
 
-            {/* Poliklinik/Oda, Gün, Saat */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Poliklinik / Oda</label>
-                <select
-                  value={tRoom}
-                  onChange={(e) => setTRoom(e.target.value)}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                >
-                  {tBranch === "İç Hastalıkları" ? (
-                    <>
-                      <option value="Dahiliye 21">Dahiliye 21 (Öncelikli)</option>
-                      <option value="Dahiliye">Herhangi bir Dahiliye Odası</option>
-                      <option value="custom">✏️ Özel Oda Yaz…</option>
-                    </>
+            {/* Poliklinik/Oda (Yalnızca İç Hastalıkları için geçerli) */}
+            {(() => {
+              const currentBranch = tBranch === "custom" ? tCustomBranch : tBranch;
+              const isBranchDahiliye = currentBranch.toLowerCase().includes("iç hastalık") || currentBranch.toLowerCase().includes("dahiliye");
+
+              return (
+                <div className="space-y-3">
+                  {isBranchDahiliye ? (
+                    <div>
+                      <label className="block text-xs font-medium text-ink-soft mb-1">Dahiliye Poliklinik Odası</label>
+                      <select
+                        value={tRoom}
+                        onChange={(e) => setTRoom(e.target.value)}
+                        className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent"
+                      >
+                        <option value="Dahiliye 21">Dahiliye 21 (Öncelikli)</option>
+                        <option value="Dahiliye">Herhangi bir Dahiliye Odası</option>
+                        <option value="custom">✏️ Özel Oda Numarası Yaz…</option>
+                      </select>
+
+                      {tRoom === "custom" && (
+                        <div className="mt-2">
+                          <input
+                            type="text"
+                            required
+                            placeholder="Örn: Dahiliye 5, Dahiliye 12, vb."
+                            value={tCustomRoom}
+                            onChange={(e) => setTCustomRoom(e.target.value)}
+                            className="w-full rounded-xl border border-accent bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                          />
+                        </div>
+                      )}
+                    </div>
                   ) : (
-                    <>
-                      <option value="">İlk Açılan Oda (Farketmez)</option>
-                      <option value="custom">✏️ Özel Oda / Hekim Yaz…</option>
-                    </>
+                    <div className="rounded-xl bg-blue-50/60 border border-blue-200/60 p-2.5 text-[11px] text-blue-900 flex items-center gap-2">
+                      <span>✨</span>
+                      <span>
+                        <strong>{currentBranch || "Bu branşta"}</strong> doğrudan randevu takvimi açılır, poliklinik oda seçimi adımı yoktur.
+                      </span>
+                    </div>
                   )}
-                </select>
-              </div>
 
-              <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Hedef Gün</label>
-                <select
-                  value={tDay}
-                  onChange={(e) => setTDay(e.target.value)}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                >
-                  {DAYS.map((d) => (
-                    <option key={d.key} value={d.key}>
-                      {d.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  {/* Gün ve Saat Tercihi */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-ink-soft mb-1">Hedef Gün</label>
+                      <select
+                        value={tDay}
+                        onChange={(e) => setTDay(e.target.value)}
+                        className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                      >
+                        {DAYS.map((d) => (
+                          <option key={d.key} value={d.key}>
+                            {d.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-              <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Saat Tercihi</label>
-                <select
-                  value={tSlot}
-                  onChange={(e) => setTSlot(e.target.value)}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                >
-                  {SLOTS.map((s) => (
-                    <option key={s.key} value={s.key}>
-                      {s.label} ({s.desc})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Özel Oda Metin Kutusu (eğer custom seçildiyse) */}
-            {tRoom === "custom" && (
-              <div>
-                <label className="block text-xs font-medium text-accent mb-1">Özel Poliklinik / Oda Adı</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Örn: Dahiliye 5, Poliklinik 2, vb."
-                  value={tCustomRoom}
-                  onChange={(e) => setTCustomRoom(e.target.value)}
-                  className="w-full rounded-xl border border-accent bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                />
-              </div>
-            )}
+                    <div>
+                      <label className="block text-xs font-medium text-ink-soft mb-1">Saat Tercihi</label>
+                      <select
+                        value={tSlot}
+                        onChange={(e) => setTSlot(e.target.value)}
+                        className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                      >
+                        {SLOTS.map((s) => (
+                          <option key={s.key} value={s.key}>
+                            {s.label} ({s.desc})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             <button
               type="submit"
@@ -944,9 +953,25 @@ const Dashboard = ({ user }: { user: User }) => {
                       <span className="rounded-lg bg-sky-100 text-sky-800 border border-sky-200 px-2 py-0.5 text-xs font-bold">
                         📍 {target.campus || "Çapa"} · {target.branch || "İç Hastalıkları"}
                       </span>
-                      <span className="rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-xs font-bold">
-                        🏥 {target.polyclinics?.length ? target.polyclinics.join(", ") : "İlk Boş Oda"}
-                      </span>
+                      {(() => {
+                        const isTargetDahiliye = (target.branch || "").toLowerCase().includes("iç hastalık") || (target.branch || "").toLowerCase().includes("dahiliye");
+                        const validRooms = (target.polyclinics || []).filter((r) => isTargetDahiliye || !r.toLowerCase().includes("dahiliye"));
+                        if (isTargetDahiliye) 
+                          return (
+                            <span className="rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-xs font-bold">
+                              🏥 {validRooms.length > 0 ? validRooms.join(", ") : "Dahiliye 21"}
+                            </span>
+                          );
+                        
+                        if (validRooms.length > 0) 
+                          return (
+                            <span className="rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-xs font-bold">
+                              🏥 {validRooms.join(", ")}
+                            </span>
+                          );
+                        
+                        return null;
+                      })()}
                       <span className="rounded-lg bg-paper border border-line px-2 py-0.5 text-xs font-medium text-ink-soft">
                         📅 {target.targetDay ? target.targetDay.toUpperCase() : "İlk Boş Gün"}
                       </span>
