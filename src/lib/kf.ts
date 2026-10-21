@@ -1,12 +1,14 @@
 import { createClient, type KrykftnClient } from "@krykftn/client";
 
-import type {
-  Job,
-  PersonInput,
-  PersonView,
-  State,
-  Target,
-  TargetInput,
+import {
+  type Job,
+  normalizeState,
+  type PersonInput,
+  type PersonView,
+  type State,
+  type StateWire,
+  type Target,
+  type TargetInput,
 } from "@/lib/model.ts";
 
 export const API_BASE: string = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://api.krykftn.dev";
@@ -23,23 +25,19 @@ const call = <T>(method: Method, path: string[], body?: unknown): Promise<T> =>
   kf.transport.request<T>({ method, segments: ["v1", "app", ...path], body });
 
 export const api = {
-  me: () => call<State>("GET", ["me"]),
+  me: async (): Promise<State> => normalizeState(await call<StateWire>("GET", ["me"])),
 
-  // People
   getPeople: () => call<PersonView[]>("GET", ["people"]),
   addPerson: (input: PersonInput) => call<PersonView>("POST", ["people"], input),
   updatePerson: (id: string, input: Partial<PersonInput>) => call<PersonView>("PUT", ["people", id], input),
   deletePerson: (id: string) => call<void>("DELETE", ["people", id]),
 
-  // Targets
   addTarget: (input: TargetInput) => call<Target>("POST", ["targets"], input),
   removeTarget: (id: string) => call<void>("DELETE", ["targets", id]),
   runTarget: (id: string, dryRun: boolean) => call<Job>("POST", ["targets", id, "run"], { dryRun }),
 
-  // Jobs
   job: (id: string) => call<Job>("GET", ["jobs", id]),
   cancelJob: (id: string) => call<{ cancelled: boolean }>("POST", ["jobs", id, "cancel"]),
 
-  // Admin
   setEnabled: (enabled: boolean) => call<void>("POST", ["enabled"], { enabled }),
 };

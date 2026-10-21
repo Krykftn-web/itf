@@ -2,36 +2,75 @@
 
 import type { User } from "@krykftn/client";
 import { useAuth } from "@krykftn/client/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { api, kf } from "@/lib/kf.ts";
 import {
+  BRANCH_GROUPS,
   CAMPUSES,
+  CAPA_MERKEZ,
   COMMON_BRANCHES,
+  CUSTOM,
   DAYS,
+  DEFAULT_BRANCH,
+  DEFAULT_ROOM,
+  fold,
+  initials,
+  isDahiliye,
   isLive,
+  isValidTC,
+  type JobStatus,
+  type LogLine,
   type PersonInput,
   type PersonView,
+  pollDelay,
+  QUICK_BRANCHES,
+  RELATIONS,
+  type SlotKey,
   SLOTS,
   type State,
   stepTitle,
+  suggestCampus,
   type TargetInput,
 } from "@/lib/model.ts";
 
-const visible = (): boolean => (typeof document === "undefined" ? true : document.visibilityState === "visible");
+const FIELD = "w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent";
+const LABEL = "block text-xs font-medium text-ink-soft mb-1";
+const SUBMIT =
+  "w-full rounded-xl bg-accent py-2.5 text-sm font-bold text-white shadow-xs transition hover:bg-accent-hover active:scale-[0.98] disabled:opacity-50";
+const FORM = "mb-5 rounded-xl border border-accent/30 bg-sky-50/40 p-4 space-y-3";
+const EMPTY = "rounded-xl border border-dashed border-line p-6 text-center text-xs text-muted";
 
-const isValidTC = (val: string): boolean => {
-  if (!/^[1-9]\d{10}$/.test(val)) return false;
-  const d = val.split("").map(Number);
-  if (d.length !== 11) return false;
-  const [d0 = 0, d1 = 0, d2 = 0, d3 = 0, d4 = 0, d5 = 0, d6 = 0, d7 = 0, d8 = 0, d9 = 0, d10 = 0] = d;
-  const oddSum = d0 + d2 + d4 + d6 + d8;
-  const evenSum = d1 + d3 + d5 + d7;
-  let check10 = (oddSum * 7 - evenSum) % 10;
-  if (check10 < 0) check10 += 10;
-  if (check10 !== d9) return false;
-  const sum10 = d.slice(0, 10).reduce((acc, cur) => acc + cur, 0);
-  return sum10 % 10 === d10;
+const CLOCK = new Intl.DateTimeFormat("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+const clock = (iso: string): string => CLOCK.format(new Date(iso));
+
+const pad = (n: number): string => String(n).padStart(2, "0");
+
+const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+const LOG_TONE: Record<LogLine["level"], string> = {
+  info: "",
+  good: "text-emerald-400 font-semibold",
+  warn: "text-rose-400",
+};
+
+const JOB_STATUS: Record<JobStatus, { label: string; tone: string }> = {
+  queued: { label: "Sırada", tone: "bg-slate-100 text-slate-700" },
+  running: { label: "Çalışıyor", tone: "bg-blue-100 text-blue-700 animate-pulse" },
+  done: { label: "Tamamlandı", tone: "bg-emerald-100 text-emerald-700" },
+  failed: { label: "Başarısız", tone: "bg-rose-100 text-rose-700" },
+  cancelled: { label: "Durduruldu", tone: "bg-slate-100 text-slate-700" },
+};
+
+const BRANCH_OPTIONS = BRANCH_GROUPS.map((g) => ({ ...g, items: COMMON_BRANCHES.filter((b) => b.category === g.category) }));
+
+const relationTone = (relation = ""): string => {
+  const r = fold(relation);
+  if (r.includes("baba")) return "bg-blue-100 text-blue-700 border-blue-200";
+  if (r.includes("kendi") || r.includes("ben")) return "bg-indigo-100 text-indigo-700 border-indigo-200";
+  if (r.includes("anne")) return "bg-rose-100 text-rose-700 border-rose-200";
+  return "bg-slate-100 text-slate-700 border-slate-200";
 };
 
 const IconGoogle = () => (
@@ -82,18 +121,18 @@ const SignInGate = () => {
         </p>
 
         <div className="mt-6 rounded-2xl border border-line bg-paper-2 p-4 text-left text-xs text-muted space-y-3">
-          <div className="flex items-center gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-white font-bold text-[11px]">1</span>
-            <span className="text-ink-soft">Google hesabınızla tek tıkla oturum açın</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-white font-bold text-[11px]">2</span>
-            <span className="text-ink-soft">Aile üyelerinizi (Babam, Kendim, Annem) ekleyin</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-white font-bold text-[11px]">3</span>
-            <span className="text-ink-soft">Dahiliye 21 polikliniğini ve gün tercihinizi belirleyin</span>
-          </div>
+          {[
+            "Google hesabınızla tek tıkla oturum açın",
+            "Aile üyelerinizi (Babam, Kendim, Annem) ekleyin",
+            "Dahiliye 21 polikliniğini ve gün tercihinizi belirleyin",
+          ].map((step, idx) => (
+            <div key={step} className="flex items-center gap-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-white font-bold text-[11px]">
+                {idx + 1}
+              </span>
+              <span className="text-ink-soft">{step}</span>
+            </div>
+          ))}
         </div>
 
         <button
@@ -111,58 +150,30 @@ const SignInGate = () => {
   );
 };
 
-const getRelationBadge = (relation?: string) => {
-  const r = (relation || "").toLowerCase();
-  if (r.includes("baba")) return "bg-blue-100 text-blue-700 border-blue-200";
-  if (r.includes("kendi") || r.includes("ben")) return "bg-indigo-100 text-indigo-700 border-indigo-200";
-  if (r.includes("anne")) return "bg-rose-100 text-rose-700 border-rose-200";
-  return "bg-slate-100 text-slate-700 border-slate-200";
-};
-
-const getPersonInitial = (name: string) => {
-  if (!name) return "👤";
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const first = parts[0];
-  const second = parts[1];
-  if (first && second) return `${first[0] ?? ""}${second[0] ?? ""}`.toUpperCase();
-  return name.slice(0, 2).toUpperCase();
-};
-
 const CountdownBanner = ({ nextOpening }: { nextOpening: string }) => {
-  const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number } | null>(null);
+  const [left, setLeft] = useState<number | null>(null);
 
   useEffect(() => {
-    const update = () => {
-      const target = new Date(nextOpening).getTime();
-      const now = Date.now();
-      const diff = Math.max(0, target - now);
-
-      const hours = Math.floor(diff / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-      setTimeLeft({ hours, minutes, seconds });
-    };
-
+    const target = Date.parse(nextOpening);
+    const update = () => setLeft(Math.max(0, target - Date.now()));
     update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
   }, [nextOpening]);
 
-  const isUnderTenMin = timeLeft && timeLeft.hours === 0 && timeLeft.minutes < 10;
+  const urgent = left !== null && left < 10 * 60_000;
 
   return (
     <div
       className={`rounded-2xl border p-4 shadow-sm transition ${
-        isUnderTenMin
-          ? "border-hospital/40 bg-gradient-to-r from-red-50 to-orange-50"
-          : "border-accent/20 bg-gradient-to-r from-sky-50 via-blue-50 to-indigo-50"
+        urgent ? "border-hospital/40 bg-gradient-to-r from-red-50 to-orange-50" : "border-accent/20 bg-gradient-to-r from-sky-50 via-blue-50 to-indigo-50"
       }`}
     >
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
           <div
             className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl shadow-xs ${
-              isUnderTenMin ? "bg-red-500 text-white animate-bounce" : "bg-accent text-white"
+              urgent ? "bg-red-500 text-white animate-bounce" : "bg-accent text-white"
             }`}
           >
             ⏰
@@ -180,15 +191,15 @@ const CountdownBanner = ({ nextOpening }: { nextOpening: string }) => {
           </div>
         </div>
 
-        {timeLeft && (
+        {left !== null && (
           <div className="flex items-center gap-1.5 self-end sm:self-auto font-mono text-xs font-bold bg-white px-3.5 py-2 rounded-xl border border-line shadow-xs">
             <span className="text-muted text-[10px] uppercase font-sans mr-1">Kalan:</span>
-            <span className="rounded bg-paper-2 px-1.5 py-0.5 text-accent">{String(timeLeft.hours).padStart(2, "0")}s</span>
+            <span className="rounded bg-paper-2 px-1.5 py-0.5 text-accent">{pad(Math.floor(left / 3_600_000))}s</span>
             <span>:</span>
-            <span className="rounded bg-paper-2 px-1.5 py-0.5 text-accent">{String(timeLeft.minutes).padStart(2, "0")}d</span>
+            <span className="rounded bg-paper-2 px-1.5 py-0.5 text-accent">{pad(Math.floor(left / 60_000) % 60)}d</span>
             <span>:</span>
-            <span className={`rounded px-1.5 py-0.5 ${isUnderTenMin ? "bg-red-100 text-red-600" : "bg-paper-2 text-accent"}`}>
-              {String(timeLeft.seconds).padStart(2, "0")}sn
+            <span className={`rounded px-1.5 py-0.5 ${urgent ? "bg-red-100 text-red-600" : "bg-paper-2 text-accent"}`}>
+              {pad(Math.floor(left / 1000) % 60)}sn
             </span>
           </div>
         )}
@@ -197,198 +208,442 @@ const CountdownBanner = ({ nextOpening }: { nextOpening: string }) => {
   );
 };
 
-const Dashboard = ({ user }: { user: User }) => {
-  const [state, setState] = useState<State | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const LogList = ({ lines, className }: { lines: LogLine[]; className: string }) => (
+  <div className={`rounded-lg bg-slate-900 p-3 font-mono text-[11px] text-slate-200 overflow-y-auto space-y-1 ${className}`}>
+    {lines.map((l, idx) => (
+      <div key={idx} className="leading-relaxed">
+        <span className="text-slate-500 mr-2">{clock(l.at)}</span>
+        <span className={LOG_TONE[l.level]}>{l.message}</span>
+        {(l.count ?? 0) > 1 && <span className="ml-1.5 text-slate-500">×{l.count}</span>}
+      </div>
+    ))}
+  </div>
+);
 
-  // New person modal/form toggle
-  const [showPersonForm, setShowPersonForm] = useState(false);
-  const [pName, setPName] = useState("");
-  const [pRelation, setPRelation] = useState("Babam");
-  const [pTc, setPTc] = useState("");
-  const [pPhone, setPPhone] = useState("");
-  const [pFather, setPFather] = useState("");
-  const [pBirthDate, setPBirthDate] = useState("");
+const SectionHead = ({ icon, title, hint, children }: { icon: string; title: string; hint?: string; children?: ReactNode }) => (
+  <div className="flex items-center justify-between mb-4">
+    <div>
+      <h2 className="text-base font-bold text-ink flex items-center gap-2">
+        <span>{icon}</span> {title}
+      </h2>
+      {hint && <p className="text-xs text-muted mt-0.5">{hint}</p>}
+    </div>
+    {children}
+  </div>
+);
 
-  // New target modal/form toggle
-  const [showTargetForm, setShowTargetForm] = useState(false);
-  const [tPersonId, setTPersonId] = useState("");
-  const [tCampus, setTCampus] = useState("Çapa Yerleşkesi - Merkez Kampüs");
-  const [tBranch, setTBranch] = useState("İç Hastalıkları");
-  const [tCustomBranch, setTCustomBranch] = useState("");
-  const [tRoom, setTRoom] = useState("Dahiliye 21");
-  const [tCustomRoom, setTCustomRoom] = useState("");
-  const [tDay, setTDay] = useState("perşembe");
-  const [tSlot, setTSlot] = useState("early");
+const ToggleButton = ({ open, label, onClick }: { open: boolean; label: string; onClick: () => void }) => (
+  <button
+    onClick={onClick}
+    className="rounded-xl bg-accent hover:bg-accent-hover text-white px-3.5 py-2 text-xs font-semibold shadow-xs transition active:scale-[0.98] flex items-center gap-1.5"
+  >
+    <span>{open ? "✕ Vazgeç" : label}</span>
+  </button>
+);
 
-  const suggestCampusForBranch = (branch: string): string => {
-    const b = branch.toLowerCase();
-    if (b.includes("kalp")) return "Çapa Yerleşkesi - Ek Poliklinik Binası";
-    if (b.includes("göz")) return "Vatan Yerleşkesi";
-    if (b.includes("ortopedi") || b.includes("genel cerrahi") || b.includes("plastik") || b.includes("psikiyatri") || b.includes("çocuk cerrahisi")) 
-      return "Çapa Yerleşkesi - Ek Poliklinik Binası";
-    
-    if (b.includes("iç hastalık") || b.includes("dahiliye") || b.includes("kardiyo") || b.includes("nöroloji") || b.includes("çocuk")) 
-      return "Çapa Yerleşkesi - Merkez Kampüs";
-    
-    return "";
-  };
+const Field = ({ label, aside, children }: { label: string; aside?: ReactNode; children: ReactNode }) => (
+  <label className="block">
+    <span className="flex justify-between items-center mb-1 text-xs font-medium text-ink-soft">
+      {label}
+      {aside}
+    </span>
+    {children}
+  </label>
+);
 
-  // Active console log expansion
-  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+const EMPTY_PERSON: PersonInput = { name: "", relation: RELATIONS[0], tc: "", phone: "", fatherName: "", birthDate: "" };
 
-  const reload = useCallback(async () => {
-    try {
-      const data = await api.me();
-      setState(data);
-      const firstPerson = data.people?.[0];
-      if (firstPerson && !tPersonId) 
-        setTPersonId(firstPerson.id);
-      
-      setError(null);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [tPersonId]);
+const PersonForm = ({ busy, onSave }: { busy: boolean; onSave: (input: PersonInput) => void }) => {
+  const [form, setForm] = useState(EMPTY_PERSON);
+  const update = (patch: Partial<PersonInput>) => setForm((f) => ({ ...f, ...patch }));
+  const tcValid = isValidTC(form.tc);
 
-  useEffect(() => {
-    const first = setTimeout(() => {
-      void reload();
-    }, 0);
-    const timer = setInterval(() => {
-      if (visible()) void reload();
-    }, 3500);
-    return () => {
-      clearTimeout(first);
-      clearInterval(timer);
-    };
-  }, [reload]);
-
-  const liveJobs = useMemo(() => (state?.jobs || []).filter(isLive), [state?.jobs]);
-
-  const tcValid = useMemo(() => isValidTC(pTc), [pTc]);
-
-  const handleAddPerson = async (e: React.FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!tcValid) {
-      alert("Lütfen geçerli 11 haneli T.C. Kimlik Numarası girin.");
-      return;
-    }
-    try {
-      setLoading(true);
-      const input: PersonInput = {
-        name: pName.trim(),
-        relation: pRelation.trim(),
-        tc: pTc.trim(),
-        phone: pPhone.trim(),
-        fatherName: pFather.trim(),
-        birthDate: pBirthDate.trim(),
-      };
-      await api.addPerson(input);
-      setShowPersonForm(false);
-      setPName("");
-      setPTc("");
-      setPPhone("");
-      setPFather("");
-      setPBirthDate("");
-      await reload();
-    } catch (err: unknown) {
-      alert("Hata: " + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setLoading(false);
-    }
+    if (tcValid)
+      onSave({
+        name: form.name.trim(),
+        relation: form.relation?.trim(),
+        tc: form.tc,
+        phone: form.phone.trim(),
+        fatherName: form.fatherName.trim(),
+        birthDate: form.birthDate.trim(),
+      });
   };
 
-  const handleDeletePerson = async (id: string, name: string) => {
-    if (!confirm(`"${name}" adlı kişiyi ve ilişkili hedefleri silmek istediğinizden emin misiniz?`)) return;
-    try {
-      setLoading(true);
-      await api.deletePerson(id);
-      await reload();
-    } catch (err: unknown) {
-      alert("Hata: " + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setLoading(false);
-    }
+  return (
+    <form onSubmit={submit} className={FORM}>
+      <h3 className="text-xs font-bold uppercase tracking-wider text-accent">Yeni Kişi Kaydı</h3>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Ad Soyad">
+          <input
+            type="text"
+            required
+            placeholder="Örn: Mehmet Kaftanoğlu"
+            value={form.name}
+            onChange={(e) => update({ name: e.target.value })}
+            className={FIELD}
+          />
+        </Field>
+
+        <div>
+          <span className={LABEL}>Yakınlık / Etiket</span>
+          <div className="flex gap-1.5 flex-wrap">
+            {RELATIONS.map((r) => (
+              <button
+                type="button"
+                key={r}
+                onClick={() => update({ relation: r })}
+                className={`rounded-lg px-2.5 py-1 text-xs font-semibold border transition ${
+                  form.relation === r ? "bg-accent text-white border-accent" : "bg-white text-ink-soft border-line"
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field
+          label="T.C. Kimlik No"
+          aside={
+            form.tc.length === 11 && (
+              <span className={`text-[11px] font-bold ${tcValid ? "text-emerald-600" : "text-rose-500"}`}>
+                {tcValid ? "✓ Geçerli T.C." : "✕ Hatalı Numara"}
+              </span>
+            )
+          }
+        >
+          <input
+            type="text"
+            inputMode="numeric"
+            required
+            maxLength={11}
+            placeholder="11 Haneli T.C."
+            value={form.tc}
+            onChange={(e) => update({ tc: e.target.value.replace(/\D/g, "") })}
+            className={`${FIELD} font-mono`}
+          />
+        </Field>
+
+        <Field label="Cep Telefonu">
+          <input
+            type="tel"
+            required
+            placeholder="0532..."
+            value={form.phone}
+            onChange={(e) => update({ phone: e.target.value })}
+            className={FIELD}
+          />
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Baba Adı">
+          <input
+            type="text"
+            required
+            placeholder="Örn: Hasan"
+            value={form.fatherName}
+            onChange={(e) => update({ fatherName: e.target.value })}
+            className={FIELD}
+          />
+        </Field>
+
+        <Field label="Doğum Tarihi (GG.AA.YYYY)">
+          <input
+            type="text"
+            required
+            placeholder="01.01.1960"
+            value={form.birthDate}
+            onChange={(e) => update({ birthDate: e.target.value })}
+            className={FIELD}
+          />
+        </Field>
+      </div>
+
+      <button type="submit" disabled={busy || !tcValid} className={SUBMIT}>
+        Kişiyi Güvenle Kaydet
+      </button>
+    </form>
+  );
+};
+
+type TargetFormProps = {
+  people: PersonView[];
+  personId: string;
+  onPersonChange: (id: string) => void;
+  busy: boolean;
+  onSave: (input: TargetInput) => void;
+};
+
+const TargetForm = ({ people, personId, onPersonChange, busy, onSave }: TargetFormProps) => {
+  const [campus, setCampus] = useState(CAPA_MERKEZ);
+  const [branch, setBranch] = useState(DEFAULT_BRANCH);
+  const [customBranch, setCustomBranch] = useState("");
+  const [room, setRoom] = useState(DEFAULT_ROOM);
+  const [customRoom, setCustomRoom] = useState("");
+  const [day, setDay] = useState("perşembe");
+  const [slot, setSlot] = useState<SlotKey>("early");
+
+  const branchName = (branch === CUSTOM ? customBranch : branch).trim();
+  const roomName = (room === CUSTOM ? customRoom : room).trim();
+  const dahiliye = isDahiliye(branchName);
+
+  const pickBranch = (next: string) => {
+    setBranch(next);
+    const suggested = suggestCampus(next);
+    if (suggested) setCampus(suggested);
   };
 
-  const handleAddTarget = async (e: React.FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!tPersonId) {
+    if (!personId) {
       alert("Lütfen hedefin atanacağı kişiyi seçin.");
       return;
     }
-    const branchName = tBranch === "custom" ? tCustomBranch.trim() : tBranch.trim();
     if (!branchName) {
       alert("Lütfen geçerli bir branş seçin veya yazın.");
       return;
     }
-    const isBranchDahiliye = branchName.toLowerCase().includes("iç hastalık") || branchName.toLowerCase().includes("dahiliye");
-    const roomName = isBranchDahiliye ? (tRoom === "custom" ? tCustomRoom.trim() : tRoom.trim()) : "";
+    onSave({
+      personId,
+      campus: campus.trim(),
+      branch: branchName,
+      polyclinics: dahiliye && roomName ? [roomName] : [],
+      targetDay: day,
+      slot,
+    });
+  };
 
+  return (
+    <form onSubmit={submit} className={FORM}>
+      <h3 className="text-xs font-bold uppercase tracking-wider text-accent">Yeni Hedef Oluştur</h3>
+
+      <Field label="Kime Randevu Alınacak?">
+        <select value={personId} onChange={(e) => onPersonChange(e.target.value)} className={`${FIELD} font-semibold`}>
+          {people.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} ({p.relation || "Kişi"}) — TC: {p.maskedTc}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <Field label="Yerleşke (Şube / Kampüs)">
+            <select value={campus} onChange={(e) => setCampus(e.target.value)} className={`${FIELD} font-semibold`}>
+              {CAMPUSES.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <p className="text-[11px] text-muted mt-1 leading-snug">
+            ℹ️ {CAMPUSES.find((c) => c.key === campus)?.desc ?? "Otomatik veya serbest seçim"}
+          </p>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="block text-xs font-medium text-ink-soft">Ana Branş</span>
+            <span className="text-[10px] text-muted">Hızlı Seçim:</span>
+          </div>
+
+          <div className="flex flex-wrap gap-1 mb-2">
+            {QUICK_BRANCHES.map((quick) => (
+              <button
+                type="button"
+                key={quick.key}
+                onClick={() => pickBranch(quick.key)}
+                className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold border transition ${
+                  branch === quick.key
+                    ? "bg-accent text-white border-accent shadow-xs"
+                    : "bg-white text-ink-soft border-line hover:border-accent/40"
+                }`}
+              >
+                {quick.label}
+              </button>
+            ))}
+          </div>
+
+          <select
+            aria-label="Ana Branş"
+            value={branch}
+            onChange={(e) => pickBranch(e.target.value)}
+            className={`${FIELD} font-semibold`}
+          >
+            {BRANCH_OPTIONS.map((g) => (
+              <optgroup key={g.category} label={g.label}>
+                {g.items.map((b) => (
+                  <option key={b.key} value={b.key}>
+                    {b.name}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+            <option value={CUSTOM}>✏️ Diğer (Özel Branş Yaz…)</option>
+          </select>
+        </div>
+      </div>
+
+      {branch === CUSTOM && (
+        <label className="block">
+          <span className="block text-xs font-medium text-accent mb-1">Özel Branş Adı</span>
+          <input
+            type="text"
+            required
+            placeholder="Örn: Kalp ve Damar Cerrahisi, Radyoloji, vb."
+            value={customBranch}
+            onChange={(e) => setCustomBranch(e.target.value)}
+            className={`${FIELD} border-accent`}
+          />
+        </label>
+      )}
+
+      {dahiliye ? (
+        <div>
+          <Field label="Dahiliye Poliklinik Odası">
+            <select value={room} onChange={(e) => setRoom(e.target.value)} className={`${FIELD} font-semibold`}>
+              <option value={DEFAULT_ROOM}>{DEFAULT_ROOM} (Öncelikli)</option>
+              <option value="Dahiliye">Herhangi bir Dahiliye Odası</option>
+              <option value={CUSTOM}>✏️ Özel Oda Numarası Yaz…</option>
+            </select>
+          </Field>
+
+          {room === CUSTOM && (
+            <input
+              type="text"
+              required
+              aria-label="Özel oda numarası"
+              placeholder="Örn: Dahiliye 5, Dahiliye 12, vb."
+              value={customRoom}
+              onChange={(e) => setCustomRoom(e.target.value)}
+              className={`${FIELD} border-accent mt-2`}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl bg-blue-50/60 border border-blue-200/60 p-2.5 text-[11px] text-blue-900 flex items-center gap-2">
+          <span>✨</span>
+          <span>
+            <strong>{branchName || "Bu branşta"}</strong> doğrudan randevu takvimi açılır, poliklinik oda seçimi adımı yoktur.
+          </span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Hedef Gün">
+          <select value={day} onChange={(e) => setDay(e.target.value)} className={FIELD}>
+            {DAYS.map((d) => (
+              <option key={d.key} value={d.key}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Saat Tercihi">
+          <select value={slot} onChange={(e) => setSlot(e.target.value as SlotKey)} className={FIELD}>
+            {SLOTS.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label} ({s.desc})
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+
+      <button type="submit" disabled={busy} className={SUBMIT}>
+        Hedefi Kaydet ve Nöbete Al
+      </button>
+    </form>
+  );
+};
+
+const useLiveState = () => {
+  const [state, setState] = useState<State | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const reloadRef = useRef(async () => {});
+
+  useEffect(() => {
+    let latest: State | null = null;
+    let seq = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const visible = () => document.visibilityState === "visible";
+    const reload = async () => {
+      const id = ++seq;
+      clearTimeout(timer);
+      try {
+        const data = await api.me();
+        if (id !== seq) return;
+        latest = data;
+        setState(data);
+        setError(null);
+      } catch (err: unknown) {
+        if (id === seq) setError(errorText(err));
+      } finally {
+        if (id === seq) timer = setTimeout(() => visible() && void reload(), pollDelay(latest));
+      }
+    };
+    const onVisible = () => visible() && void reload();
+    reloadRef.current = reload;
+    void reload();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      seq++;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
+  return { state, error, reload: () => reloadRef.current() };
+};
+
+const Dashboard = ({ user }: { user: User }) => {
+  const { state, error, reload } = useLiveState();
+  const [busy, setBusy] = useState(false);
+  const [personFormOpen, setPersonFormOpen] = useState(false);
+  const [targetFormOpen, setTargetFormOpen] = useState(false);
+  const [chosenPerson, setChosenPerson] = useState("");
+  const [expandedJob, setExpandedJob] = useState<string | null>(null);
+
+  const act = async (task: () => Promise<unknown>, onDone?: () => void) => {
+    setBusy(true);
     try {
-      setLoading(true);
-      const input: TargetInput = {
-        personId: tPersonId,
-        campus: tCampus.trim(),
-        branch: branchName,
-        polyclinics: roomName ? [roomName] : [],
-        targetDay: tDay,
-        slot: tSlot,
-      };
-      await api.addTarget(input);
-      setShowTargetForm(false);
-      setTCustomBranch("");
-      setTCustomRoom("");
+      await task();
+      onDone?.();
       await reload();
     } catch (err: unknown) {
-      alert("Hata: " + (err instanceof Error ? err.message : String(err)));
+      alert(`Hata: ${errorText(err)}`);
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
-  const handleDeleteTarget = async (id: string) => {
-    try {
-      setLoading(true);
-      await api.removeTarget(id);
-      await reload();
-    } catch (err: unknown) {
-      alert("Hata: " + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setLoading(false);
-    }
+  const deletePerson = (person: PersonView) => {
+    if (confirm(`"${person.name}" adlı kişiyi ve ilişkili hedefleri silmek istediğinizden emin misiniz?`))
+      void act(() => api.deletePerson(person.id));
   };
 
-  const handleRunTarget = async (id: string, dryRun: boolean) => {
-    try {
-      await api.runTarget(id, dryRun);
-      await reload();
-      setExpandedLogId(id);
-    } catch (err: unknown) {
-      alert("Hata: " + (err instanceof Error ? err.message : String(err)));
-    }
-  };
+  const runTarget = (id: string, dryRun: boolean) => void act(async () => setExpandedJob((await api.runTarget(id, dryRun)).id));
 
-  const handleCancelJob = async (jobId: string) => {
-    try {
-      await api.cancelJob(jobId);
-      await reload();
-    } catch (err: unknown) {
-      alert("Hata: " + (err instanceof Error ? err.message : String(err)));
-    }
-  };
+  const cancelJob = (id: string) => void act(() => api.cancelJob(id));
 
-  const peopleMap = useMemo(() => {
-    const map = new Map<string, PersonView>();
-    (state?.people || []).forEach((p) => map.set(p.id, p));
-    return map;
-  }, [state?.people]);
+  const people = state?.people ?? [];
+  const targets = state?.targets ?? [];
+  const jobs = state?.jobs ?? [];
+  const liveJobs = jobs.filter(isLive);
+  const peopleById = new Map(people.map((p) => [p.id, p]));
+  const personId = peopleById.has(chosenPerson) ? chosenPerson : (people[0]?.id ?? "");
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 space-y-6">
-      {/* Üst Header & Kullanıcı Çubuğu */}
       <header className="rounded-2xl border border-line bg-paper p-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-3.5">
@@ -412,14 +667,8 @@ const Dashboard = ({ user }: { user: User }) => {
               Tünel & Server Aktif
             </span>
             <div className="flex items-center gap-2 rounded-xl bg-paper-2 px-3 py-1.5 text-xs border border-line">
-              <span className="font-medium text-ink-soft truncate max-w-[150px] sm:max-w-none">
-                {user.email || user.displayName}
-              </span>
-              <button
-                onClick={() => void kf.auth.signOut()}
-                className="text-hospital font-semibold hover:underline ml-1"
-                title="Oturumu Kapat"
-              >
+              <span className="font-medium text-ink-soft truncate max-w-[150px] sm:max-w-none">{user.email || user.displayName}</span>
+              <button onClick={() => void kf.auth.signOut()} className="text-hospital font-semibold hover:underline ml-1" title="Oturumu Kapat">
                 Çıkış
               </button>
             </div>
@@ -427,10 +676,8 @@ const Dashboard = ({ user }: { user: User }) => {
         </div>
       </header>
 
-      {/* 20:00 Sayacı */}
       {state?.nextOpening && <CountdownBanner nextOpening={state.nextOpening} />}
 
-      {/* Canlı Çalışan İş Bildirimi */}
       {liveJobs.length > 0 && (
         <section className="rounded-2xl border-2 border-accent bg-sky-50/50 p-5 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
@@ -450,14 +697,11 @@ const Dashboard = ({ user }: { user: User }) => {
                     <span className="text-xs text-muted ml-2">{j.summary || "Hedefe gidiliyor"}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {j.dryRun && (
-                      <span className="rounded-md bg-amber-100 text-amber-800 px-2 py-0.5 text-[11px] font-bold">
-                        TEST MODU
-                      </span>
-                    )}
+                    {j.dryRun && <span className="rounded-md bg-amber-100 text-amber-800 px-2 py-0.5 text-[11px] font-bold">TEST MODU</span>}
                     <button
-                      onClick={() => handleCancelJob(j.id)}
-                      className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100"
+                      onClick={() => cancelJob(j.id)}
+                      disabled={busy}
+                      className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50"
                     >
                       Durdur
                     </button>
@@ -469,163 +713,28 @@ const Dashboard = ({ user }: { user: User }) => {
                   <span>{stepTitle(j.step)}</span>
                 </div>
 
-                {j.log && j.log.length > 0 && (
-                  <div className="rounded-lg bg-slate-900 p-3 font-mono text-[11px] text-slate-200 max-h-36 overflow-y-auto space-y-1">
-                    {j.log.slice(-6).map((l, idx) => (
-                      <div key={idx} className="leading-relaxed">
-                        <span className="text-slate-500 mr-2">
-                          {new Date(l.at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                        </span>
-                        <span className={l.level === "good" ? "text-emerald-400 font-semibold" : l.level === "warn" ? "text-rose-400" : ""}>
-                          {l.message}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {j.log.length > 0 && <LogList lines={j.log.slice(-6)} className="max-h-36" />}
               </div>
             ))}
           </div>
         </section>
       )}
 
-      {error && (
-        <div className="rounded-2xl border border-hospital/30 bg-hospital-soft p-4 text-sm text-hospital">
-          {error}
-        </div>
-      )}
+      {error && <div className="rounded-2xl border border-hospital/30 bg-hospital-soft p-4 text-sm text-hospital">{error}</div>}
 
-      {/* 1. BÖLÜM: KİŞİLERİM (AİLE ÜYELERİ) */}
       <section className="rounded-2xl border border-line bg-paper p-6 shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-base font-bold text-ink flex items-center gap-2">
-              <span>👥</span> Kişilerim & Aile Üyeleri
-            </h2>
-            <p className="text-xs text-muted mt-0.5">
-              Randevu alınacak kişileri ve T.C. kimlik bilgilerini buradan yönetin.
-            </p>
-          </div>
-          <button
-            onClick={() => setShowPersonForm(!showPersonForm)}
-            className="rounded-xl bg-accent hover:bg-accent-hover text-white px-3.5 py-2 text-xs font-semibold shadow-xs transition active:scale-[0.98] flex items-center gap-1.5"
-          >
-            <span>{showPersonForm ? "✕ Vazgeç" : "+ Yeni Kişi Ekle"}</span>
-          </button>
-        </div>
+        <SectionHead icon="👥" title="Kişilerim & Aile Üyeleri" hint="Randevu alınacak kişileri ve T.C. kimlik bilgilerini buradan yönetin.">
+          <ToggleButton open={personFormOpen} label="+ Yeni Kişi Ekle" onClick={() => setPersonFormOpen(!personFormOpen)} />
+        </SectionHead>
 
-        {/* Yeni Kişi Formu */}
-        {showPersonForm && (
-          <form onSubmit={handleAddPerson} className="mb-5 rounded-xl border border-accent/30 bg-sky-50/40 p-4 space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-accent">Yeni Kişi Kaydı</h3>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Ad Soyad</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Örn: Mehmet Kaftanoğlu"
-                  value={pName}
-                  onChange={(e) => setPName(e.target.value)}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Yakınlık / Etiket</label>
-                <div className="flex gap-1.5 flex-wrap">
-                  {["Babam", "Kendim", "Annem", "Eşim", "Diğer"].map((r) => (
-                    <button
-                      type="button"
-                      key={r}
-                      onClick={() => setPRelation(r)}
-                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold border transition ${
-                        pRelation === r ? "bg-accent text-white border-accent" : "bg-white text-ink-soft border-line"
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-xs font-medium text-ink-soft">T.C. Kimlik No</label>
-                  {pTc.length === 11 && (
-                    <span className={`text-[11px] font-bold ${tcValid ? "text-emerald-600" : "text-rose-500"}`}>
-                      {tcValid ? "✓ Geçerli T.C." : "✕ Hatalı Numara"}
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  required
-                  maxLength={11}
-                  placeholder="11 Haneli T.C."
-                  value={pTc}
-                  onChange={(e) => setPTc(e.target.value.replace(/\D/g, ""))}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Cep Telefonu</label>
-                <input
-                  type="tel"
-                  required
-                  placeholder="0532..."
-                  value={pPhone}
-                  onChange={(e) => setPPhone(e.target.value)}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Baba Adı</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Örn: Hasan"
-                  value={pFather}
-                  onChange={(e) => setPFather(e.target.value)}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Doğum Tarihi (GG.AA.YYYY)</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="01.01.1960"
-                  value={pBirthDate}
-                  onChange={(e) => setPBirthDate(e.target.value)}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || !tcValid}
-              className="w-full rounded-xl bg-accent py-2.5 text-sm font-bold text-white shadow-xs transition hover:bg-accent-hover active:scale-[0.98] disabled:opacity-50"
-            >
-              Kişiyi Güvenle Kaydet
-            </button>
-          </form>
+        {personFormOpen && (
+          <PersonForm busy={busy} onSave={(input) => void act(() => api.addPerson(input), () => setPersonFormOpen(false))} />
         )}
 
-        {/* Kişi Kartları */}
-        {state?.people && state.people.length > 0 ? (
+        {people.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {state.people.map((person) => {
-              const targetCount = (state.targets || []).filter((t) => t.accountId === person.id).length;
+            {people.map((person) => {
+              const targetCount = targets.filter((t) => t.accountId === person.id).length;
               return (
                 <div
                   key={person.id}
@@ -634,12 +743,12 @@ const Dashboard = ({ user }: { user: User }) => {
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 font-bold text-sm">
-                        {getPersonInitial(person.name)}
+                        {initials(person.name)}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
                           <h4 className="font-bold text-sm text-ink">{person.name}</h4>
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${getRelationBadge(person.relation)}`}>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${relationTone(person.relation)}`}>
                             {person.relation || "Kişi"}
                           </span>
                         </div>
@@ -651,8 +760,9 @@ const Dashboard = ({ user }: { user: User }) => {
                     </div>
 
                     <button
-                      onClick={() => handleDeletePerson(person.id, person.name)}
-                      className="text-xs text-muted hover:text-hospital p-1 transition"
+                      onClick={() => deletePerson(person)}
+                      disabled={busy}
+                      className="text-xs text-muted hover:text-hospital p-1 transition disabled:opacity-50"
                       title="Kişiyi Sil"
                     >
                       ✕
@@ -669,8 +779,8 @@ const Dashboard = ({ user }: { user: User }) => {
                     </span>
                     <button
                       onClick={() => {
-                        setTPersonId(person.id);
-                        setShowTargetForm(true);
+                        setChosenPerson(person.id);
+                        setTargetFormOpen(true);
                       }}
                       className="text-accent font-semibold hover:underline"
                     >
@@ -682,325 +792,82 @@ const Dashboard = ({ user }: { user: User }) => {
             })}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-line p-6 text-center text-xs text-muted">
+          <div className={EMPTY}>
             Henüz kimse eklenmedi. Randevu alabilmek için yukarıdaki &quot;+ Yeni Kişi Ekle&quot; butonu ile kendinizi veya babanızı ekleyin.
           </div>
         )}
       </section>
 
-      {/* 2. BÖLÜM: RANDEVU HEDEFLERİ */}
       <section className="rounded-2xl border border-line bg-paper p-6 shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-base font-bold text-ink flex items-center gap-2">
-              <span>🎯</span> Randevu Hedefleri
-            </h2>
-            <p className="text-xs text-muted mt-0.5">
-              Hangi aile üyesi için hangi poliklinik ve güne randevu aranacak?
-            </p>
-          </div>
-          {state?.people && state.people.length > 0 && (
-            <button
-              onClick={() => setShowTargetForm(!showTargetForm)}
-              className="rounded-xl bg-accent hover:bg-accent-hover text-white px-3.5 py-2 text-xs font-semibold shadow-xs transition active:scale-[0.98] flex items-center gap-1.5"
-            >
-              <span>{showTargetForm ? "✕ Vazgeç" : "+ Yeni Hedef Ekle"}</span>
-            </button>
+        <SectionHead icon="🎯" title="Randevu Hedefleri" hint="Hangi aile üyesi için hangi poliklinik ve güne randevu aranacak?">
+          {people.length > 0 && (
+            <ToggleButton open={targetFormOpen} label="+ Yeni Hedef Ekle" onClick={() => setTargetFormOpen(!targetFormOpen)} />
           )}
-        </div>
+        </SectionHead>
 
-        {/* Yeni Hedef Formu */}
-        {showTargetForm && (
-          <form onSubmit={handleAddTarget} className="mb-5 rounded-xl border border-accent/30 bg-sky-50/40 p-4 space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-accent">Yeni Hedef Oluştur</h3>
-
-            <div>
-              <label className="block text-xs font-medium text-ink-soft mb-1">Kime Randevu Alınacak?</label>
-              <select
-                value={tPersonId}
-                onChange={(e) => setTPersonId(e.target.value)}
-                className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent"
-              >
-                {(state?.people || []).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.relation || "Kişi"}) — TC: {p.maskedTc}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Yerleşke ve Branş Seçimi */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-ink-soft mb-1">Yerleşke (Şube / Kampüs)</label>
-                <select
-                  value={tCampus}
-                  onChange={(e) => setTCampus(e.target.value)}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent"
-                >
-                  {CAMPUSES.map((c) => (
-                    <option key={c.key} value={c.key}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[11px] text-muted mt-1 leading-snug">
-                  ℹ️ {CAMPUSES.find((c) => c.key === tCampus)?.desc || "Otomatik veya serbest seçim"}
-                </p>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-medium text-ink-soft">Ana Branş</label>
-                  <span className="text-[10px] text-muted">Hızlı Seçim:</span>
-                </div>
-                
-                {/* Hızlı Seçim Butonları */}
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {[
-                    { key: "Kalp ve Damar Cerrahisi", label: "❤️ Kalp Damar" },
-                    { key: "İç Hastalıkları", label: "🩺 Dahiliye" },
-                    { key: "Kardiyoloji", label: "🫀 Kardiyoloji" },
-                    { key: "Göz Hastalıkları", label: "👁️ Göz" },
-                    { key: "Kulak Burun Boğaz Hastalıkları", label: "👂 KBB" },
-                    { key: "Ortopedi ve Travmatoloji", label: "🦴 Ortopedi" },
-                  ].map((quick) => (
-                    <button
-                      type="button"
-                      key={quick.key}
-                      onClick={() => {
-                        setTBranch(quick.key);
-                        const suggested = suggestCampusForBranch(quick.key);
-                        if (suggested) setTCampus(suggested);
-                        if (quick.key === "İç Hastalıkları") setTRoom("Dahiliye 21");
-                        else setTRoom("");
-                      }}
-                      className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold border transition ${
-                        tBranch === quick.key
-                          ? "bg-accent text-white border-accent shadow-xs"
-                          : "bg-white text-ink-soft border-line hover:border-accent/40"
-                      }`}
-                    >
-                      {quick.label}
-                    </button>
-                  ))}
-                </div>
-
-                <select
-                  value={tBranch}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setTBranch(val);
-                    const suggested = suggestCampusForBranch(val);
-                    if (suggested) setTCampus(suggested);
-                    if (val === "İç Hastalıkları") setTRoom("Dahiliye 21");
-                    else if (val !== "custom") setTRoom("");
-                  }}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent"
-                >
-                  <optgroup label="── Cerrahi Branşlar ──">
-                    {COMMON_BRANCHES.filter((b) => b.category === "Cerrahi").map((b) => (
-                      <option key={b.key} value={b.key}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="── Dahili Branşlar ──">
-                    {COMMON_BRANCHES.filter((b) => b.category === "Dahili").map((b) => (
-                      <option key={b.key} value={b.key}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="── Çocuk & Ruh Sağlığı ──">
-                    {COMMON_BRANCHES.filter((b) => b.category === "Çocuk & Ruh Sağlığı").map((b) => (
-                      <option key={b.key} value={b.key}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="── Tanı & Diğer Branşlar ──">
-                    {COMMON_BRANCHES.filter((b) => b.category === "Diğer").map((b) => (
-                      <option key={b.key} value={b.key}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <option value="custom">✏️ Diğer (Özel Branş Yaz…)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Özel Branş Metin Kutusu (eğer custom seçildiyse) */}
-            {tBranch === "custom" && (
-              <div>
-                <label className="block text-xs font-medium text-accent mb-1">Özel Branş Adı</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Örn: Kalp ve Damar Cerrahisi, Radyoloji, vb."
-                  value={tCustomBranch}
-                  onChange={(e) => setTCustomBranch(e.target.value)}
-                  className="w-full rounded-xl border border-accent bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                />
-              </div>
-            )}
-
-            {/* Poliklinik/Oda (Yalnızca İç Hastalıkları için geçerli) */}
-            {(() => {
-              const currentBranch = tBranch === "custom" ? tCustomBranch : tBranch;
-              const isBranchDahiliye = currentBranch.toLowerCase().includes("iç hastalık") || currentBranch.toLowerCase().includes("dahiliye");
-
-              return (
-                <div className="space-y-3">
-                  {isBranchDahiliye ? (
-                    <div>
-                      <label className="block text-xs font-medium text-ink-soft mb-1">Dahiliye Poliklinik Odası</label>
-                      <select
-                        value={tRoom}
-                        onChange={(e) => setTRoom(e.target.value)}
-                        className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent"
-                      >
-                        <option value="Dahiliye 21">Dahiliye 21 (Öncelikli)</option>
-                        <option value="Dahiliye">Herhangi bir Dahiliye Odası</option>
-                        <option value="custom">✏️ Özel Oda Numarası Yaz…</option>
-                      </select>
-
-                      {tRoom === "custom" && (
-                        <div className="mt-2">
-                          <input
-                            type="text"
-                            required
-                            placeholder="Örn: Dahiliye 5, Dahiliye 12, vb."
-                            value={tCustomRoom}
-                            onChange={(e) => setTCustomRoom(e.target.value)}
-                            className="w-full rounded-xl border border-accent bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl bg-blue-50/60 border border-blue-200/60 p-2.5 text-[11px] text-blue-900 flex items-center gap-2">
-                      <span>✨</span>
-                      <span>
-                        <strong>{currentBranch || "Bu branşta"}</strong> doğrudan randevu takvimi açılır, poliklinik oda seçimi adımı yoktur.
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Gün ve Saat Tercihi */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-ink-soft mb-1">Hedef Gün</label>
-                      <select
-                        value={tDay}
-                        onChange={(e) => setTDay(e.target.value)}
-                        className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                      >
-                        {DAYS.map((d) => (
-                          <option key={d.key} value={d.key}>
-                            {d.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-ink-soft mb-1">Saat Tercihi</label>
-                      <select
-                        value={tSlot}
-                        onChange={(e) => setTSlot(e.target.value)}
-                        className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-                      >
-                        {SLOTS.map((s) => (
-                          <option key={s.key} value={s.key}>
-                            {s.label} ({s.desc})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-accent py-2.5 text-sm font-bold text-white shadow-xs transition hover:bg-accent-hover active:scale-[0.98]"
-            >
-              Hedefi Kaydet ve Nöbete Al
-            </button>
-          </form>
+        {targetFormOpen && people.length > 0 && (
+          <TargetForm
+            people={people}
+            personId={personId}
+            onPersonChange={setChosenPerson}
+            busy={busy}
+            onSave={(input) => void act(() => api.addTarget(input), () => setTargetFormOpen(false))}
+          />
         )}
 
-        {/* Hedef Listesi */}
-        {state?.targets && state.targets.length > 0 ? (
+        {targets.length > 0 ? (
           <div className="space-y-3">
-            {state.targets.map((target) => {
-              const person = peopleMap.get(target.accountId);
-              const slotInfo = SLOTS.find((s) => s.key === target.slot);
+            {targets.map((target) => {
+              const person = peopleById.get(target.accountId);
+              const slot = SLOTS.find((s) => s.key === target.slot);
+              const rooms = target.polyclinics.length > 0 ? target.polyclinics.join(", ") : isDahiliye(target.branch) ? DEFAULT_ROOM : "";
+              const running = liveJobs.some((j) => j.targetId === target.id);
               return (
                 <div
                   key={target.id}
                   className="rounded-xl border border-line bg-paper-2 p-4 shadow-xs flex flex-col md:flex-row md:items-center md:justify-between gap-3 hover:border-accent/40 transition"
                 >
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="rounded-lg bg-blue-600 text-white px-2.5 py-0.5 text-xs font-bold shadow-xs">
-                        👤 {person ? `${person.name} (${person.relation || "Kişi"})` : "Bilinmeyen Kişi"}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="rounded-lg bg-blue-600 text-white px-2.5 py-0.5 text-xs font-bold shadow-xs">
+                      👤 {person ? `${person.name} (${person.relation || "Kişi"})` : "Bilinmeyen Kişi"}
+                    </span>
+                    <span className="rounded-lg bg-sky-100 text-sky-800 border border-sky-200 px-2 py-0.5 text-xs font-bold">
+                      📍 {target.campus || "Herhangi bir yerleşke"} · {target.branch || DEFAULT_BRANCH}
+                    </span>
+                    {rooms && (
+                      <span className="rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-xs font-bold">
+                        🏥 {rooms}
                       </span>
-                      <span className="rounded-lg bg-sky-100 text-sky-800 border border-sky-200 px-2 py-0.5 text-xs font-bold">
-                        📍 {target.campus || "Çapa"} · {target.branch || "İç Hastalıkları"}
-                      </span>
-                      {(() => {
-                        const isTargetDahiliye = (target.branch || "").toLowerCase().includes("iç hastalık") || (target.branch || "").toLowerCase().includes("dahiliye");
-                        const validRooms = (target.polyclinics || []).filter((r) => isTargetDahiliye || !r.toLowerCase().includes("dahiliye"));
-                        if (isTargetDahiliye) 
-                          return (
-                            <span className="rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-xs font-bold">
-                              🏥 {validRooms.length > 0 ? validRooms.join(", ") : "Dahiliye 21"}
-                            </span>
-                          );
-                        
-                        if (validRooms.length > 0) 
-                          return (
-                            <span className="rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-xs font-bold">
-                              🏥 {validRooms.join(", ")}
-                            </span>
-                          );
-                        
-                        return null;
-                      })()}
-                      <span className="rounded-lg bg-paper border border-line px-2 py-0.5 text-xs font-medium text-ink-soft">
-                        📅 {target.targetDay ? target.targetDay.toUpperCase() : "İlk Boş Gün"}
-                      </span>
-                      {slotInfo && (
-                        <span className="rounded-lg bg-paper border border-line px-2 py-0.5 text-xs font-medium text-muted">
-                          ⏰ {slotInfo.label}
-                        </span>
-                      )}
-                    </div>
+                    )}
+                    <span className="rounded-lg bg-paper border border-line px-2 py-0.5 text-xs font-medium text-ink-soft">
+                      📅 {target.targetDay ? target.targetDay.toLocaleUpperCase("tr") : "İlk Boş Gün"}
+                    </span>
+                    {slot && (
+                      <span className="rounded-lg bg-paper border border-line px-2 py-0.5 text-xs font-medium text-muted">⏰ {slot.label}</span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-line/60">
                     <button
-                      onClick={() => handleRunTarget(target.id, true)}
-                      className="rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1.5 text-xs font-bold transition active:scale-[0.98]"
+                      onClick={() => runTarget(target.id, true)}
+                      disabled={busy || running}
+                      className="rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1.5 text-xs font-bold transition active:scale-[0.98] disabled:opacity-50"
                       title="Randevu almadan son adıma kadar test eder"
                     >
                       🧪 Test Et
                     </button>
                     <button
-                      onClick={() => handleRunTarget(target.id, false)}
-                      className="rounded-lg bg-accent hover:bg-accent-hover text-white px-3 py-1.5 text-xs font-bold shadow-xs transition active:scale-[0.98]"
+                      onClick={() => runTarget(target.id, false)}
+                      disabled={busy || running}
+                      className="rounded-lg bg-accent hover:bg-accent-hover text-white px-3 py-1.5 text-xs font-bold shadow-xs transition active:scale-[0.98] disabled:opacity-50"
                       title="Hemen randevuyu alır"
                     >
                       ⚡ Şimdi Al
                     </button>
                     <button
-                      onClick={() => handleDeleteTarget(target.id)}
-                      className="rounded-lg border border-line hover:border-rose-300 hover:text-rose-600 px-2.5 py-1.5 text-xs text-muted transition"
+                      onClick={() => void act(() => api.removeTarget(target.id))}
+                      disabled={busy}
+                      className="rounded-lg border border-line hover:border-rose-300 hover:text-rose-600 px-2.5 py-1.5 text-xs text-muted transition disabled:opacity-50"
                       title="Hedefi Sil"
                     >
                       Sil
@@ -1011,101 +878,58 @@ const Dashboard = ({ user }: { user: User }) => {
             })}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-line p-6 text-center text-xs text-muted">
-            Henüz aktif randevu hedefi oluşturulmadı.
-          </div>
+          <div className={EMPTY}>Henüz aktif randevu hedefi oluşturulmadı.</div>
         )}
       </section>
 
-      {/* 3. BÖLÜM: GEÇMİŞ VE İŞ TAKİBİ */}
-      {state?.jobs && state.jobs.length > 0 && (
+      {jobs.length > 0 && (
         <section className="rounded-2xl border border-line bg-paper p-6 shadow-xs">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-bold text-ink flex items-center gap-2">
-              <span>📋</span> Randevu Takip & İşlem Kayıtları
-            </h2>
+          <SectionHead icon="📋" title="Randevu Takip & İşlem Kayıtları">
             <span className="text-xs text-muted">Son işlemler</span>
-          </div>
+          </SectionHead>
 
           <div className="space-y-3">
-            {state.jobs.slice(0, 10).map((j) => {
-              const isExpanded = expandedLogId === j.id;
+            {jobs.slice(0, 10).map((j) => {
+              const expanded = expandedJob === j.id;
+              const status = JOB_STATUS[j.status] ?? { label: j.status, tone: "bg-slate-100 text-slate-700" };
               return (
                 <div key={j.id} className="rounded-xl border border-line bg-paper-2 p-3.5 space-y-2">
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-muted">
-                        {new Date(j.createdAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                      </span>
+                      <span className="font-mono text-muted">{clock(j.createdAt)}</span>
                       <span className="font-bold text-ink">{j.personName || "İş"}</span>
                       {j.summary && <span className="text-muted text-[11px]">({j.summary})</span>}
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {j.dryRun && (
-                        <span className="rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold">
-                          TEST
-                        </span>
-                      )}
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                          j.status === "done"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : j.status === "running"
-                            ? "bg-blue-100 text-blue-700 animate-pulse"
-                            : j.status === "failed"
-                            ? "bg-rose-100 text-rose-700"
-                            : "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {j.status === "done"
-                          ? "Tamamlandı"
-                          : j.status === "running"
-                          ? "Çalışıyor"
-                          : j.status === "failed"
-                          ? "Başarısız"
-                          : j.status}
-                      </span>
+                      {j.dryRun && <span className="rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold">TEST</span>}
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${status.tone}`}>{status.label}</span>
                     </div>
                   </div>
 
-                  {j.result && (
-                    <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2 text-xs font-semibold text-emerald-800">
-                      🎉 {j.result}
-                    </div>
-                  )}
+                  {j.result &&
+                    (j.status === "done" ? (
+                      <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2 text-xs font-semibold text-emerald-800">🎉 {j.result}</div>
+                    ) : (
+                      <div className="rounded-lg bg-rose-50 border border-rose-200 p-2 text-xs font-semibold text-rose-800">⚠️ {j.result}</div>
+                    ))}
 
                   <div className="flex items-center justify-between text-[11px] pt-1">
-                    <button
-                      onClick={() => setExpandedLogId(isExpanded ? null : j.id)}
-                      className="text-accent hover:underline font-semibold"
-                    >
-                      {isExpanded ? "▲ Logları Gizle" : `▼ Konsol Loglarını Gör (${j.log?.length || 0})`}
+                    <button onClick={() => setExpandedJob(expanded ? null : j.id)} className="text-accent hover:underline font-semibold">
+                      {expanded ? "▲ Logları Gizle" : `▼ Konsol Loglarını Gör (${j.log.length})`}
                     </button>
-                    {j.status === "running" && (
+                    {isLive(j) && (
                       <button
-                        onClick={() => handleCancelJob(j.id)}
-                        className="text-rose-600 hover:underline font-semibold"
+                        onClick={() => cancelJob(j.id)}
+                        disabled={busy}
+                        className="text-rose-600 hover:underline font-semibold disabled:opacity-50"
                       >
                         İşlemi Durdur
                       </button>
                     )}
                   </div>
 
-                  {isExpanded && j.log && j.log.length > 0 && (
-                    <div className="rounded-lg bg-slate-900 p-3 font-mono text-[11px] text-slate-200 max-h-48 overflow-y-auto space-y-1">
-                      {j.log.map((l, idx) => (
-                        <div key={idx} className="leading-tight">
-                          <span className="text-slate-500 mr-2">
-                            {new Date(l.at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                          </span>
-                          <span className={l.level === "good" ? "text-emerald-400 font-semibold" : l.level === "warn" ? "text-rose-400" : ""}>
-                            {l.message}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {expanded && j.log.length > 0 && <LogList lines={j.log} className="max-h-48" />}
                 </div>
               );
             })}
@@ -1116,10 +940,10 @@ const Dashboard = ({ user }: { user: User }) => {
   );
 };
 
-export default function Home() {
+const Home = () => {
   const { user, loading } = useAuth(kf);
 
-  if (loading && !user) 
+  if (loading && !user)
     return (
       <div className="grid min-h-dvh place-items-center bg-ground">
         <div className="text-center text-sm text-muted">
@@ -1128,11 +952,10 @@ export default function Home() {
         </div>
       </div>
     );
-  
 
-  if (!user || user.isAnonymous) 
-    return <SignInGate />;
-  
+  if (!user || user.isAnonymous) return <SignInGate />;
 
   return <Dashboard user={user} />;
-}
+};
+
+export default Home;

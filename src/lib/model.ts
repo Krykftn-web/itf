@@ -10,7 +10,7 @@ export type LogLine = {
 export type Job = {
   id: string;
   targetId: string;
-  accountId: string; // personId
+  accountId: string;
   personName?: string;
   owner?: string;
   summary?: string;
@@ -30,11 +30,11 @@ export type Job = {
 
 export type SlotKey = "early" | "morning" | "afternoon" | "any";
 
-export const SLOTS: { key: SlotKey; label: string; desc: string; hours: string }[] = [
-  { key: "early", label: "Sabah Erken", desc: "07:00 – 10:00", hours: "07:00–09:59" },
-  { key: "morning", label: "Öğleden Önce", desc: "10:00 – 13:00", hours: "10:00–12:59" },
-  { key: "afternoon", label: "Öğleden Sonra", desc: "13:00 – 18:00", hours: "13:00–17:59" },
-  { key: "any", label: "İlk Boş Saat", desc: "Farketmez", hours: "Tüm gün" },
+export const SLOTS: { key: SlotKey; label: string; desc: string }[] = [
+  { key: "early", label: "Sabah Erken", desc: "07:00 – 10:00" },
+  { key: "morning", label: "Öğleden Önce", desc: "10:00 – 13:00" },
+  { key: "afternoon", label: "Öğleden Sonra", desc: "13:00 – 18:00" },
+  { key: "any", label: "İlk Boş Saat", desc: "Farketmez" },
 ];
 
 export const DAYS = [
@@ -46,53 +46,46 @@ export const DAYS = [
   { key: "", label: "Herhangi Bir Gün (İlk Boş)" },
 ];
 
+export const RELATIONS = ["Babam", "Kendim", "Annem", "Eşim", "Diğer"] as const;
+
+export const CAPA_MERKEZ = "Çapa Yerleşkesi - Merkez Kampüs";
+export const CAPA_EK = "Çapa Yerleşkesi - Ek Poliklinik Binası";
+export const VATAN = "Vatan Yerleşkesi";
+export const DEFAULT_BRANCH = "İç Hastalıkları";
+export const DEFAULT_ROOM = "Dahiliye 21";
+export const CUSTOM = "custom";
+
 export type CampusItem = {
   key: string;
   name: string;
-  desc?: string;
+  desc: string;
 };
 
 export const CAMPUSES: CampusItem[] = [
-  {
-    key: "Çapa Yerleşkesi - Merkez Kampüs",
-    name: "Çapa Yerleşkesi - Merkez Kampüs",
-    desc: "Dahiliye, Kardiyoloji, Nöroloji, Göğüs, Çocuk vb.",
-  },
-  {
-    key: "Çapa Yerleşkesi - Ek Poliklinik Binası",
-    name: "Çapa Yerleşkesi - Ek Poliklinik Binası",
-    desc: "Kalp ve Damar Cerrahisi, Ortopedi, Genel Cerrahi, Psikiyatri vb.",
-  },
-  {
-    key: "Beyazıt Yerleşkesi",
-    name: "Beyazıt Yerleşkesi",
-    desc: "Aile Hekimliği, FTR, Cildiye, KBB, Dahiliye vb.",
-  },
-  {
-    key: "Esenyurt Yerleşkesi",
-    name: "Esenyurt Yerleşkesi",
-    desc: "Genel Cerrahi, Ortopedi, Göğüs, Nöroloji, Dahiliye vb.",
-  },
-  {
-    key: "Vatan Yerleşkesi",
-    name: "Vatan Yerleşkesi",
-    desc: "Göz Hastalıkları, KBB",
-  },
-  {
-    key: "",
-    name: "Herhangi Bir Yerleşke (İlk Boş)",
-    desc: "İlk açık yerleşkeden randevu alır",
-  },
+  { key: CAPA_MERKEZ, name: CAPA_MERKEZ, desc: "Dahiliye, Kardiyoloji, Nöroloji, Göğüs, Çocuk vb." },
+  { key: CAPA_EK, name: CAPA_EK, desc: "Kalp ve Damar Cerrahisi, Ortopedi, Genel Cerrahi, Psikiyatri vb." },
+  { key: "Beyazıt Yerleşkesi", name: "Beyazıt Yerleşkesi", desc: "Aile Hekimliği, FTR, Cildiye, KBB, Dahiliye vb." },
+  { key: "Esenyurt Yerleşkesi", name: "Esenyurt Yerleşkesi", desc: "Genel Cerrahi, Ortopedi, Göğüs, Nöroloji, Dahiliye vb." },
+  { key: VATAN, name: VATAN, desc: "Göz Hastalıkları, KBB" },
+  { key: "", name: "Herhangi Bir Yerleşke (İlk Boş)", desc: "İlk açık yerleşkeden randevu alır" },
 ];
+
+export type BranchCategory = "Cerrahi" | "Dahili" | "Çocuk & Ruh Sağlığı" | "Diğer";
 
 export type BranchItem = {
   key: string;
   name: string;
-  category: "Cerrahi" | "Dahili" | "Çocuk & Ruh Sağlığı" | "Diğer";
+  category: BranchCategory;
 };
 
+export const BRANCH_GROUPS: { category: BranchCategory; label: string }[] = [
+  { category: "Cerrahi", label: "── Cerrahi Branşlar ──" },
+  { category: "Dahili", label: "── Dahili Branşlar ──" },
+  { category: "Çocuk & Ruh Sağlığı", label: "── Çocuk & Ruh Sağlığı ──" },
+  { category: "Diğer", label: "── Tanı & Diğer Branşlar ──" },
+];
+
 export const COMMON_BRANCHES: BranchItem[] = [
-  // Cerrahi Branşlar
   { key: "Kalp ve Damar Cerrahisi", name: "Kalp ve Damar Cerrahisi", category: "Cerrahi" },
   { key: "Genel Cerrahi", name: "Genel Cerrahi", category: "Cerrahi" },
   { key: "Beyin ve Sinir Cerrahisi", name: "Beyin ve Sinir Cerrahisi (Nöroşirürji)", category: "Cerrahi" },
@@ -105,8 +98,7 @@ export const COMMON_BRANCHES: BranchItem[] = [
   { key: "Çocuk Cerrahisi", name: "Çocuk Cerrahisi", category: "Cerrahi" },
   { key: "Kadın Hastalıkları ve Doğum", name: "Kadın Hastalıkları ve Doğum", category: "Cerrahi" },
 
-  // Dahili Branşlar
-  { key: "İç Hastalıkları", name: "İç Hastalıkları (Dahiliye)", category: "Dahili" },
+  { key: DEFAULT_BRANCH, name: "İç Hastalıkları (Dahiliye)", category: "Dahili" },
   { key: "Kardiyoloji", name: "Kardiyoloji (Kalp Hastalıkları)", category: "Dahili" },
   { key: "Nöroloji", name: "Nöroloji (Beyin & Sinir Hastalıkları)", category: "Dahili" },
   { key: "Göğüs Hastalıkları", name: "Göğüs Hastalıkları", category: "Dahili" },
@@ -123,13 +115,11 @@ export const COMMON_BRANCHES: BranchItem[] = [
   { key: "Geriatri", name: "Geriatri (Yaşlı Sağlığı)", category: "Dahili" },
   { key: "Algoloji", name: "Algoloji (Ağrı Polikliniği)", category: "Dahili" },
 
-  // Çocuk & Ruh Sağlığı
   { key: "Çocuk Sağlığı ve Hastalıkları", name: "Çocuk Sağlığı ve Hastalıkları (Pediatri)", category: "Çocuk & Ruh Sağlığı" },
   { key: "Çocuk Kardiyolojisi", name: "Çocuk Kardiyolojisi", category: "Çocuk & Ruh Sağlığı" },
   { key: "Çocuk ve Ergen Ruh Sağlığı", name: "Çocuk ve Ergen Ruh Sağlığı", category: "Çocuk & Ruh Sağlığı" },
   { key: "Ruh Sağlığı ve Hastalıkları", name: "Ruh Sağlığı ve Hastalıkları (Psikiyatri)", category: "Çocuk & Ruh Sağlığı" },
 
-  // Diğer
   { key: "Radyasyon Onkolojisi", name: "Radyasyon Onkolojisi", category: "Diğer" },
   { key: "Nükleer Tıp", name: "Nükleer Tıp", category: "Diğer" },
   { key: "Radyoloji", name: "Radyoloji", category: "Diğer" },
@@ -139,14 +129,23 @@ export const COMMON_BRANCHES: BranchItem[] = [
   { key: "Ağız, Diş ve Çene Cerrahisi", name: "Ağız, Diş ve Çene Cerrahisi", category: "Diğer" },
 ];
 
+export const QUICK_BRANCHES = [
+  { key: "Kalp ve Damar Cerrahisi", label: "❤️ Kalp Damar" },
+  { key: DEFAULT_BRANCH, label: "🩺 Dahiliye" },
+  { key: "Kardiyoloji", label: "🫀 Kardiyoloji" },
+  { key: "Göz Hastalıkları", label: "👁️ Göz" },
+  { key: "Kulak Burun Boğaz Hastalıkları", label: "👂 KBB" },
+  { key: "Ortopedi ve Travmatoloji", label: "🦴 Ortopedi" },
+];
+
 export type Target = {
   id: string;
-  accountId: string; // personId
+  accountId: string;
   campus: string;
   branch: string;
   polyclinics: string[];
   targetDay: string;
-  slot: SlotKey | string;
+  slot: SlotKey;
   enabled: boolean;
   lastRunAt?: string;
   createdAt: string;
@@ -177,7 +176,7 @@ export type TargetInput = {
   branch?: string;
   polyclinics?: string[];
   targetDay: string;
-  slot?: SlotKey | string;
+  slot?: SlotKey;
 };
 
 export type ServerInfo = {
@@ -199,31 +198,74 @@ export type State = {
   server?: ServerInfo;
 };
 
+export type StateWire = Omit<State, "people" | "targets" | "jobs"> & {
+  people: PersonView[] | null;
+  targets: (Omit<Target, "polyclinics"> & { polyclinics: string[] | null })[] | null;
+  jobs: (Omit<Job, "log"> & { log: LogLine[] | null })[] | null;
+};
+
+export const normalizeState = (raw: StateWire): State => ({
+  ...raw,
+  people: raw.people ?? [],
+  targets: (raw.targets ?? []).map((t) => ({ ...t, polyclinics: t.polyclinics ?? [] })),
+  jobs: (raw.jobs ?? []).map((j) => ({ ...j, log: j.log ?? [] })),
+});
+
 export const isLive = (job: Job): boolean => job.status === "queued" || job.status === "running";
 
-export const stepTitle = (step?: string): string => {
-  switch (step) {
-    case "connect":
-      return "Portala bağlanılıyor…";
-    case "login":
-      return "Kimlik girişi ve güvenlik kodu çözülüyor…";
-    case "type":
-      return "Genel Muayene seçiliyor…";
-    case "campus":
-      return "Çapa Yerleşkesi seçiliyor…";
-    case "branch":
-      return "İç Hastalıkları branşı açılıyor…";
-    case "polyclinic":
-      return "Dahiliye 21 poliklinik odası seçiliyor…";
-    case "day":
-      return "Hedef randevu günü aranıyor…";
-    case "time":
-      return "Saat aralığı eşleştiriliyor…";
-    case "confirm":
-      return "Randevu onaylama ekranı…";
-    case "done":
-      return "Tamamlandı";
-    default:
-      return "İşlem sürüyor…";
-  }
+const STEP_TITLES: Record<string, string> = {
+  connect: "Portala bağlanılıyor…",
+  login: "Kimlik girişi ve güvenlik kodu çözülüyor…",
+  type: "Genel Muayene seçiliyor…",
+  campus: "Yerleşke seçiliyor…",
+  branch: "Branş açılıyor…",
+  polyclinic: "Poliklinik odası seçiliyor…",
+  day: "Hedef randevu günü aranıyor…",
+  time: "Saat aralığı eşleştiriliyor…",
+  confirm: "Randevu onaylama ekranı…",
+  done: "Tamamlandı",
 };
+
+export const stepTitle = (step = ""): string => STEP_TITLES[step] ?? "İşlem sürüyor…";
+
+const TR_ASCII: Record<string, string> = { ı: "i", ş: "s", ç: "c", ğ: "g", ö: "o", ü: "u" };
+
+export const fold = (s = ""): string => s.toLocaleLowerCase("tr").replace(/[ışçğöü]/g, (c) => TR_ASCII[c] ?? c);
+
+export const isDahiliye = (branch = ""): boolean => {
+  const b = fold(branch);
+  return b.includes("ic hastalik") || b.includes("dahiliye");
+};
+
+const CAMPUS_HINTS: [string, string[]][] = [
+  [CAPA_EK, ["kalp", "ortopedi", "genel cerrahi", "plastik", "psikiyatri", "cocuk cerrahisi"]],
+  [VATAN, ["goz"]],
+  [CAPA_MERKEZ, ["ic hastalik", "dahiliye", "kardiyo", "noroloji", "cocuk"]],
+];
+
+export const suggestCampus = (branch: string): string => {
+  const b = fold(branch);
+  return CAMPUS_HINTS.find(([, words]) => words.some((w) => b.includes(w)))?.[0] ?? "";
+};
+
+export const isValidTC = (tc: string): boolean => {
+  if (!/^[1-9]\d{10}$/.test(tc)) return false;
+  const d = [...tc].map(Number);
+  const at = (i: number) => d[i] ?? 0;
+  const odd = at(0) + at(2) + at(4) + at(6) + at(8);
+  const even = at(1) + at(3) + at(5) + at(7);
+  const sum = d.slice(0, 10).reduce((a, b) => a + b, 0);
+  return (((odd * 7 - even) % 10) + 10) % 10 === at(9) && sum % 10 === at(10);
+};
+
+export const initials = (name: string): string => {
+  const [first = "", second = ""] = name.trim().split(/\s+/);
+  return (second ? first.charAt(0) + second.charAt(0) : first.slice(0, 2)).toLocaleUpperCase("tr") || "👤";
+};
+
+export const LIVE_POLL_MS = 3000;
+export const IDLE_POLL_MS = 15000;
+const OPENING_WATCH_MS = 5 * 60_000;
+
+export const pollDelay = (state: State | null, now = Date.now()): number =>
+  !state || state.jobs.some(isLive) || Date.parse(state.nextOpening) - now < OPENING_WATCH_MS ? LIVE_POLL_MS : IDLE_POLL_MS;
