@@ -143,9 +143,11 @@ export type Target = {
   enabled: boolean;
   done?: boolean;
   doneAt?: string;
+  attemptedAt?: string;
   appointmentId?: string;
   state: TargetState;
   waitUntil?: string;
+  runOn?: string;
   lastRunAt?: string;
   createdAt: string;
 };
@@ -257,6 +259,48 @@ export const sortTargets = (targets: Target[]): Target[] =>
     const byDate = (a.date ?? "").localeCompare(b.date ?? "");
     return isOpen(a) ? byDate : -byDate;
   });
+
+export const WEEKDAYS_SHORT = ["Pt", "Sa", "Ça", "Pe", "Cu", "Ct", "Pz"];
+
+const MONTH_TITLE = new Intl.DateTimeFormat("tr-TR", { month: "long", year: "numeric", timeZone: "UTC" });
+
+export const OPEN_LEAD = 2;
+
+export const isWeekend = (iso: string): boolean => {
+  const day = utcNoon(iso).getUTCDay();
+  return day === 0 || day === 6;
+};
+
+export const shiftWorkdays = (iso: string, n: number): string => {
+  const step = Math.sign(n);
+  let day = iso.slice(0, 10);
+  for (let left = Math.abs(n); left > 0; ) {
+    day = addDays(day, step);
+    if (!isWeekend(day)) left--;
+  }
+  return day;
+};
+
+export const runDateFor = (iso: string): string => shiftWorkdays(iso, -OPEN_LEAD);
+
+export const firstAppointmentDate = (nextOpening: string): string => shiftWorkdays(nextOpening.slice(0, 10), 1);
+
+export const nearestWorkday = (iso: string): string => (isWeekend(iso) ? shiftWorkdays(iso, 1) : iso);
+
+export const monthTitle = (iso: string): string => MONTH_TITLE.format(utcNoon(iso));
+
+export const addMonths = (iso: string, n: number): string => {
+  const d = utcNoon(`${iso.slice(0, 7)}-01`);
+  d.setUTCMonth(d.getUTCMonth() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+export const monthGrid = (iso: string): (string | null)[] => {
+  const first = `${iso.slice(0, 7)}-01`;
+  const lead = (utcNoon(first).getUTCDay() + 6) % 7;
+  const days = new Date(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)), 0)).getUTCDate();
+  return [...Array<null>(lead).fill(null), ...Array.from({ length: days }, (_, i) => addDays(first, i))];
+};
 
 export const appointmentDate = (a: Appointment): string => a.booking.date || a.bookedAt.slice(0, 10);
 

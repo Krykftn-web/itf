@@ -37,6 +37,7 @@ export const api = {
   runTarget: (id: string, dryRun: boolean) => call<Job>("POST", ["targets", id, "run"], { dryRun }),
 
   job: (id: string) => call<Job>("GET", ["jobs", id]),
+  clearJobs: () => call<{ removed: number }>("DELETE", ["jobs"]),
   cancelJob: (id: string) => call<{ cancelled: boolean }>("POST", ["jobs", id, "cancel"]),
 
   setEnabled: (enabled: boolean) => call<void>("POST", ["enabled"], { enabled }),

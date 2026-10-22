@@ -3,6 +3,12 @@ import { test } from "node:test";
 
 import {
   addDays,
+  addMonths,
+  firstAppointmentDate,
+  isWeekend,
+  monthGrid,
+  nearestWorkday,
+  runDateFor,
   type Appointment,
   CAPA_EK,
   dateParts,
@@ -157,4 +163,21 @@ test("sortAppointments puts upcoming visits first", () => {
   });
   const sorted = sortAppointments([a("old", "2026-10-10"), a("late", "2026-11-05"), a("soon", "2026-10-30")], "2026-10-22");
   assert.deepEqual(sorted.map((x) => x.id), ["soon", "late", "old"]);
+});
+
+test("runDateFor counts back two working days", () => {
+  assert.equal(runDateFor("2026-10-26"), "2026-10-22");
+  assert.equal(runDateFor("2026-10-27"), "2026-10-23");
+  assert.equal(runDateFor("2026-10-28"), "2026-10-26");
+  assert.equal(firstAppointmentDate("2026-10-22T20:00:00+03:00"), "2026-10-23");
+  assert.equal(firstAppointmentDate("2026-10-23T20:00:00+03:00"), "2026-10-26");
+  assert.equal(nearestWorkday("2026-11-01"), "2026-11-02");
+  assert.equal(isWeekend("2026-10-24"), true);
+});
+
+test("monthGrid starts on Monday", () => {
+  const grid = monthGrid("2026-10-15");
+  assert.equal(grid.indexOf("2026-10-01"), 3);
+  assert.equal(grid.at(-1), "2026-10-31");
+  assert.equal(addMonths("2026-12-20", 1), "2027-01-01");
 });

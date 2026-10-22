@@ -7,6 +7,7 @@ import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "rea
 import { api, kf } from "@/lib/kf.ts";
 import {
   addDays,
+  addMonths,
   type Appointment,
   appointmentDate,
   BRANCH_GROUPS,
@@ -18,17 +19,23 @@ import {
   DAYS,
   DEFAULT_BRANCH,
   DEFAULT_ROOM,
+  firstAppointmentDate,
   initials,
   isDahiliye,
   isLive,
   isValidTC,
+  isWeekend,
   type Job,
   type JobStatus,
   type LogLine,
+  monthGrid,
+  monthTitle,
+  nearestWorkday,
   type PersonInput,
   type PersonView,
   pollDelay,
   RELATIONS,
+  runDateFor,
   type SlotKey,
   SLOTS,
   sortAppointments,
@@ -39,6 +46,7 @@ import {
   type Target,
   type TargetInput,
   type TargetState,
+  WEEKDAYS_SHORT,
 } from "@/lib/model.ts";
 
 const FIELD = "w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent";
@@ -291,28 +299,191 @@ const PersonForm = ({ busy, onSave }: { busy: boolean; onSave: (input: PersonInp
   );
 };
 
+const Sheet = ({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) => {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-paper p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:rounded-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-bold text-ink">{title}</h2>
+          <button onClick={onClose} className="text-sm font-semibold text-muted hover:text-ink">
+            Kapat
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+};
+
+type PeopleSheetProps = {
+  people: PersonView[];
+  email: string;
+  busy: boolean;
+  onAdd: (input: PersonInput, done: () => void) => void;
+  onDelete: (person: PersonView) => void;
+  onTarget: (person: PersonView) => void;
+  onClose: () => void;
+};
+
+const PeopleSheet = ({ people, email, busy, onAdd, onDelete, onTarget, onClose }: PeopleSheetProps) => {
+  const [adding, setAdding] = useState(people.length === 0);
+
+  return (
+    <Sheet title="Kişiler" onClose={onClose}>
+      {people.length > 0 && (
+        <div className="mb-4 space-y-2">
+          {people.map((p) => (
+            <div key={p.id} className="flex items-center gap-3 rounded-xl border border-line p-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-sm font-bold text-accent">
+                {initials(p.name)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-ink">
+                  {p.name} <span className="font-normal text-muted">· {p.relation || "Kişi"}</span>
+                </div>
+                <div className="font-mono text-xs text-muted">{p.maskedTc}</div>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => onTarget(p)} className={`${LINK} text-accent`}>
+                  Hedef kur
+                </button>
+                <button onClick={() => onDelete(p)} disabled={busy} className={`${LINK} text-muted`}>
+                  Sil
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {adding ? (
+        <PersonForm busy={busy} onSave={(input) => onAdd(input, () => setAdding(false))} />
+      ) : (
+        <button onClick={() => setAdding(true)} className={PRIMARY}>
+          Yeni kişi ekle
+        </button>
+      )}
+      <p className="mt-4 text-xs text-muted">Giriş: {email}</p>
+    </Sheet>
+  );
+};
+
+type CalendarProps = {
+  value: string;
+  min: string;
+  max: string;
+  marks: Map<string, "booked" | "target">;
+  onChange: (iso: string) => void;
+};
+
+const Calendar = ({ value, min, max, marks, onChange }: CalendarProps) => {
+  const [month, setMonth] = useState(value || min);
+  const step = (n: number) => setMonth(addMonths(month, n));
+
+  return (
+    <div className="rounded-xl border border-line bg-white p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => step(-1)}
+          disabled={month.slice(0, 7) <= min.slice(0, 7)}
+          aria-label="Önceki ay"
+          className="h-8 w-8 rounded-lg text-lg hover:bg-paper-2 disabled:opacity-30"
+        >
+          ‹
+        </button>
+        <span className="text-sm font-semibold capitalize text-ink">{monthTitle(month)}</span>
+        <button
+          type="button"
+          onClick={() => step(1)}
+          disabled={month.slice(0, 7) >= max.slice(0, 7)}
+          aria-label="Sonraki ay"
+          className="h-8 w-8 rounded-lg text-lg hover:bg-paper-2 disabled:opacity-30"
+        >
+          ›
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-muted">
+        {WEEKDAYS_SHORT.map((d) => (
+          <span key={d}>{d}</span>
+        ))}
+      </div>
+      <div className="mt-1 grid grid-cols-7 gap-1">
+        {monthGrid(month).map((iso, idx) => {
+          if (!iso) return <span key={`blank-${idx}`} />;
+          const mark = marks.get(iso);
+          return (
+            <button
+              type="button"
+              key={iso}
+              onClick={() => onChange(iso)}
+              disabled={iso < min || iso > max || isWeekend(iso)}
+              className={`relative h-9 rounded-lg text-sm ${
+                iso === value ? "bg-accent font-bold text-white" : "text-ink hover:bg-paper-2"
+              } disabled:text-slate-300 disabled:hover:bg-transparent`}
+            >
+              {Number(iso.slice(8))}
+              {mark && (
+                <span
+                  className={`absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full ${
+                    mark === "booked" ? "bg-emerald-500" : iso === value ? "bg-white" : "bg-accent"
+                  }`}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const later = (a: string, b: string): string => (a > b ? a : b);
+
+const runLabel = (runOn: string, today: string): string => {
+  const { date, weekday } = dateParts(runOn);
+  return runOn === today ? "bu akşam 20:00" : `${date.slice(0, 5)} ${weekday} 20:00`;
+};
+
 type TargetFormProps = {
   people: PersonView[];
   personId: string;
   onPersonChange: (id: string) => void;
+  today: string;
+  openDate: string;
   firstDate: string;
+  marks: Map<string, "booked" | "target">;
   busy: boolean;
   onSave: (input: TargetInput) => void;
 };
 
-const TargetForm = ({ people, personId, onPersonChange, firstDate, busy, onSave }: TargetFormProps) => {
+const TargetForm = ({ people, personId, onPersonChange, today, openDate, firstDate, marks, busy, onSave }: TargetFormProps) => {
+  const lastDate = addDays(today, 90);
+  const tenDays = later(nearestWorkday(addDays(today, 10)), firstDate);
   const [date, setDate] = useState(firstDate);
   const [campus, setCampus] = useState(CAPA_MERKEZ);
   const [branch, setBranch] = useState(DEFAULT_BRANCH);
   const [customBranch, setCustomBranch] = useState("");
   const [room, setRoom] = useState(DEFAULT_ROOM);
   const [customRoom, setCustomRoom] = useState("");
-  const [day, setDay] = useState("perşembe");
   const [slot, setSlot] = useState<SlotKey>("early");
 
   const branchName = (branch === CUSTOM ? customBranch : branch).trim();
   const roomName = (room === CUSTOM ? customRoom : room).trim();
   const dahiliye = isDahiliye(branchName);
+  const runOn = later(runDateFor(date), openDate);
+  const picked = dateParts(date);
 
   const pickBranch = (next: string) => {
     setBranch(next);
@@ -329,101 +500,99 @@ const TargetForm = ({ people, personId, onPersonChange, firstDate, busy, onSave 
         campus: campus.trim(),
         branch: branchName,
         polyclinics: dahiliye && roomName ? [roomName] : [],
-        targetDay: day,
+        targetDay: "",
         slot,
       });
   };
 
   return (
     <form onSubmit={submit} className="mb-4 space-y-3 rounded-xl bg-paper-2 p-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Kişi">
-          <select value={personId} onChange={(e) => onPersonChange(e.target.value)} className={FIELD}>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Tarih (o gün 20:00'de bir kez çalışır)">
-          <input
-            type="date"
-            required
-            min={firstDate}
-            max={addDays(firstDate, 90)}
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className={FIELD}
-          />
-        </Field>
-        <Field label="Branş">
-          <select value={branch} onChange={(e) => pickBranch(e.target.value)} className={FIELD}>
-            {BRANCH_OPTIONS.map((g) => (
-              <optgroup key={g.category} label={g.category}>
-                {g.items.map((b) => (
-                  <option key={b.key} value={b.key}>
-                    {b.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-            <option value={CUSTOM}>Listede yok, yazacağım</option>
-          </select>
-        </Field>
-        {branch === CUSTOM && (
-          <Field label="Branş adı">
-            <input type="text" required value={customBranch} onChange={(e) => setCustomBranch(e.target.value)} className={FIELD} />
-          </Field>
-        )}
-        {dahiliye && (
-          <Field label="Poliklinik odası">
-            <select value={room} onChange={(e) => setRoom(e.target.value)} className={FIELD}>
-              <option value={DEFAULT_ROOM}>{DEFAULT_ROOM}</option>
-              <option value="Dahiliye">Herhangi bir Dahiliye odası</option>
-              <option value={CUSTOM}>Başka oda yazacağım</option>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-ink-soft">Randevu günü</span>
+            <button type="button" onClick={() => setDate(tenDays)} className={`${LINK} text-accent`}>
+              10 gün sonra
+            </button>
+          </div>
+          <Calendar key={date.slice(0, 7)} value={date} min={firstDate} max={lastDate} marks={marks} onChange={setDate} />
+          <p className="text-xs text-ink-soft">
+            <strong>
+              {picked.date} {picked.weekday}
+            </strong>{" "}
+            için bot <strong>{runLabel(runOn, today)}</strong>&apos;de bir kez dener.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <Field label="Kişi">
+            <select value={personId} onChange={(e) => onPersonChange(e.target.value)} className={FIELD}>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
             </select>
           </Field>
-        )}
-        {dahiliye && room === CUSTOM && (
-          <Field label="Oda adı">
-            <input
-              type="text"
-              required
-              placeholder="Örn. Dahiliye 5"
-              value={customRoom}
-              onChange={(e) => setCustomRoom(e.target.value)}
-              className={FIELD}
-            />
+          <Field label="Branş">
+            <select value={branch} onChange={(e) => pickBranch(e.target.value)} className={FIELD}>
+              {BRANCH_OPTIONS.map((g) => (
+                <optgroup key={g.category} label={g.category}>
+                  {g.items.map((b) => (
+                    <option key={b.key} value={b.key}>
+                      {b.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+              <option value={CUSTOM}>Listede yok, yazacağım</option>
+            </select>
           </Field>
-        )}
-        <Field label="Yerleşke">
-          <select value={campus} onChange={(e) => setCampus(e.target.value)} className={FIELD}>
-            {CAMPUSES.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.key ? c.name : "Farketmez"}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Randevu günü">
-          <select value={day} onChange={(e) => setDay(e.target.value)} className={FIELD}>
-            {DAYS.map((d) => (
-              <option key={d.key} value={d.key}>
-                {d.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Saat">
-          <select value={slot} onChange={(e) => setSlot(e.target.value as SlotKey)} className={FIELD}>
-            {SLOTS.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label} ({s.desc})
-              </option>
-            ))}
-          </select>
-        </Field>
+          {branch === CUSTOM && (
+            <Field label="Branş adı">
+              <input type="text" required value={customBranch} onChange={(e) => setCustomBranch(e.target.value)} className={FIELD} />
+            </Field>
+          )}
+          {dahiliye && (
+            <Field label="Poliklinik odası">
+              <select value={room} onChange={(e) => setRoom(e.target.value)} className={FIELD}>
+                <option value={DEFAULT_ROOM}>{DEFAULT_ROOM}</option>
+                <option value="Dahiliye">Herhangi bir Dahiliye odası</option>
+                <option value={CUSTOM}>Başka oda yazacağım</option>
+              </select>
+            </Field>
+          )}
+          {dahiliye && room === CUSTOM && (
+            <Field label="Oda adı">
+              <input
+                type="text"
+                required
+                placeholder="Örn. Dahiliye 5"
+                value={customRoom}
+                onChange={(e) => setCustomRoom(e.target.value)}
+                className={FIELD}
+              />
+            </Field>
+          )}
+          <Field label="Yerleşke">
+            <select value={campus} onChange={(e) => setCampus(e.target.value)} className={FIELD}>
+              {CAMPUSES.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.key ? c.name : "Farketmez"}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Saat">
+            <select value={slot} onChange={(e) => setSlot(e.target.value as SlotKey)} className={FIELD}>
+              {SLOTS.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label} ({s.desc})
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
       </div>
       <button type="submit" disabled={busy} className={PRIMARY}>
         Hedefi kaydet
@@ -432,32 +601,27 @@ const TargetForm = ({ people, personId, onPersonChange, firstDate, busy, onSave 
   );
 };
 
-const TargetRow = ({
-  target,
-  person,
-  job,
-  today,
-  busy,
-  onTest,
-  onStop,
-  onDelete,
-}: {
+type TargetRowProps = {
   target: Target;
   person?: PersonView;
   job?: Job;
   today: string;
+  openDate: string;
   busy: boolean;
   onTest: () => void;
   onStop: (jobId: string) => void;
   onDelete: () => void;
-}) => {
+};
+
+const TargetRow = ({ target, person, job, today, openDate, busy, onTest, onStop, onDelete }: TargetRowProps) => {
+  const runOn = later(target.runOn ?? "", openDate);
   const status =
-    target.state === "pending" && target.date === today ? { label: "Bu akşam 20:00", tone: "bg-accent text-white" } : TARGET_STATUS[target.state];
+    target.state === "pending" && runOn === today ? { label: "Bu akşam 20:00", tone: "bg-accent text-white" } : TARGET_STATUS[target.state];
   const closed = target.state === "done" || target.state === "missed" || target.state === "blocked";
   const details = [
     target.polyclinics.join(", "),
     target.campus || "Yerleşke farketmez",
-    `Gün: ${dayLabel(target.targetDay)}`,
+    target.date ? "" : `Gün: ${dayLabel(target.targetDay)}`,
     slotLabel(target.slot),
   ].filter(Boolean);
 
@@ -472,6 +636,7 @@ const TargetRow = ({
           <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${status.tone}`}>{status.label}</span>
         </div>
         <div className="text-xs text-muted">{details.join(" · ")}</div>
+        {target.state === "pending" && target.date && <div className="text-xs text-ink-soft">Bot {runLabel(runOn, today)}&apos;de dener</div>}
         {target.state === "blocked" && target.waitUntil && (
           <div className="text-xs text-amber-700">Son randevudan 10 gün geçmeden çalışmaz ({stamp(target.waitUntil)})</div>
         )}
@@ -540,7 +705,7 @@ const useLiveState = () => {
 const Dashboard = ({ user }: { user: User }) => {
   const { state, error, reload } = useLiveState();
   const [busy, setBusy] = useState(false);
-  const [personFormOpen, setPersonFormOpen] = useState(false);
+  const [peopleOpen, setPeopleOpen] = useState(false);
   const [targetFormOpen, setTargetFormOpen] = useState(false);
   const [chosenPerson, setChosenPerson] = useState("");
 
@@ -561,23 +726,37 @@ const Dashboard = ({ user }: { user: User }) => {
     if (confirm(`${person.name} ve hedefleri silinsin mi?`)) void act(() => api.deletePerson(person.id));
   };
 
+  const clearHistory = () => {
+    if (confirm("İşlem geçmişi silinsin mi? Çalışan işler etkilenmez.")) void act(() => api.clearJobs());
+  };
+
   const people = state?.people ?? [];
   const targets = sortTargets(state?.targets ?? []);
   const jobs = state?.jobs ?? [];
   const today = state?.now.slice(0, 10) ?? "";
+  const openDate = state?.nextOpening.slice(0, 10) ?? today;
+  const firstDate = state ? firstAppointmentDate(state.nextOpening) : today;
   const appointments = sortAppointments(state?.appointments ?? [], today);
-  const firstDate = state?.nextOpening.slice(0, 10) ?? today;
   const peopleById = new Map(people.map((p) => [p.id, p]));
   const liveByTarget = new Map(jobs.filter(isLive).map((j) => [j.targetId, j]));
   const personId = peopleById.has(chosenPerson) ? chosenPerson : (people[0]?.id ?? "");
+  const marks = new Map<string, "booked" | "target">([
+    ...targets.filter((t) => t.date && (t.state === "pending" || t.state === "running")).map((t) => [t.date ?? "", "target"] as const),
+    ...appointments.map((a) => [appointmentDate(a), "booked"] as const),
+  ]);
 
   return (
-    <main className="mx-auto max-w-3xl space-y-5 px-4 py-8">
+    <main className="mx-auto max-w-3xl space-y-5 px-4 py-6">
       <header className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-ink">İTF Randevu</h1>
-        <div className="flex items-center gap-3 text-xs">
-          <span className="max-w-[160px] truncate text-muted sm:max-w-none">{user.email || user.displayName}</span>
-          <button onClick={() => void kf.auth.signOut()} className="font-semibold text-hospital hover:underline">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setPeopleOpen(true)}
+            className="rounded-xl border border-line bg-white px-3 py-1.5 text-sm font-semibold text-ink hover:border-accent"
+          >
+            Kişiler ({people.length})
+          </button>
+          <button onClick={() => void kf.auth.signOut()} className="text-xs font-semibold text-hospital hover:underline">
             Çıkış
           </button>
         </div>
@@ -607,21 +786,29 @@ const Dashboard = ({ user }: { user: User }) => {
           )
         }
       >
-        {targetFormOpen && people.length > 0 && (
+        {targetFormOpen && people.length > 0 && state && (
           <TargetForm
             people={people}
             personId={personId}
             onPersonChange={setChosenPerson}
+            today={today}
+            openDate={openDate}
             firstDate={firstDate}
+            marks={marks}
             busy={busy}
             onSave={(input) => void act(() => api.addTarget(input), () => setTargetFormOpen(false))}
           />
         )}
 
         {people.length === 0 ? (
-          <p className="text-sm text-muted">Önce aşağıdan bir kişi ekleyin.</p>
+          <div className="space-y-3">
+            <p className="text-sm text-muted">Randevu alınacak kişiyi ekleyerek başlayın.</p>
+            <button onClick={() => setPeopleOpen(true)} className={PRIMARY}>
+              Kişi ekle
+            </button>
+          </div>
         ) : targets.length === 0 ? (
-          <p className="text-sm text-muted">Henüz hedef yok. Tarih ve branş seçip bir hedef kurun.</p>
+          <p className="text-sm text-muted">Henüz hedef yok. Takvimden randevu gününü seçip hedef kurun.</p>
         ) : (
           <div className="space-y-2">
             {targets.map((t) => (
@@ -631,6 +818,7 @@ const Dashboard = ({ user }: { user: User }) => {
                 person={peopleById.get(t.accountId)}
                 job={liveByTarget.get(t.id)}
                 today={today}
+                openDate={openDate}
                 busy={busy}
                 onTest={() => void act(() => api.runTarget(t.id, true))}
                 onStop={(jobId) => void act(() => api.cancelJob(jobId))}
@@ -641,70 +829,50 @@ const Dashboard = ({ user }: { user: User }) => {
         )}
       </Section>
 
-      <Section
-        title="Kişiler"
-        action={
-          <button onClick={() => setPersonFormOpen(!personFormOpen)} className={PRIMARY}>
-            {personFormOpen ? "Vazgeç" : "Yeni kişi"}
-          </button>
-        }
-      >
-        {personFormOpen && <PersonForm busy={busy} onSave={(input) => void act(() => api.addPerson(input), () => setPersonFormOpen(false))} />}
-
-        {people.length === 0 ? (
-          <p className="text-sm text-muted">Randevu alınacak kişiyi ekleyin.</p>
-        ) : (
-          <div className="space-y-2">
-            {people.map((p) => (
-              <div key={p.id} className="flex items-center gap-3 rounded-xl border border-line p-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-sm font-bold text-accent">
-                  {initials(p.name)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-ink">
-                    {p.name} <span className="font-normal text-muted">· {p.relation || "Kişi"}</span>
-                  </div>
-                  <div className="font-mono text-xs text-muted">{p.maskedTc}</div>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => {
-                      setChosenPerson(p.id);
-                      setTargetFormOpen(true);
-                    }}
-                    className={`${LINK} text-accent`}
-                  >
-                    Hedef kur
-                  </button>
-                  <button onClick={() => deletePerson(p)} disabled={busy} className={`${LINK} text-muted`}>
-                    Sil
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
       {jobs.length > 0 && (
-        <details className={CARD}>
-          <summary className="cursor-pointer text-sm font-semibold text-ink-soft">İşlem geçmişi</summary>
-          <div className="mt-3 space-y-2">
-            {jobs.slice(0, 10).map((j) => (
-              <details key={j.id} className="rounded-xl border border-line p-3 text-xs">
-                <summary className="flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="font-mono text-muted">{stamp(j.createdAt)}</span>
-                  <span className="font-semibold text-ink">{j.personName}</span>
-                  <span className="text-muted">{j.summary}</span>
-                  {j.dryRun && <span className="rounded bg-amber-100 px-1.5 text-amber-800">test</span>}
-                  <span className="ml-auto font-semibold">{JOB_STATUS[j.status] ?? j.status}</span>
-                </summary>
-                {j.result && <p className="mt-2 text-ink-soft">{j.result}</p>}
-                {j.log.length > 0 && <LogList lines={j.log} />}
-              </details>
-            ))}
-          </div>
-        </details>
+        <Section
+          title="İşlem geçmişi"
+          action={
+            <button onClick={clearHistory} disabled={busy} className={`${LINK} text-muted`}>
+              Temizle
+            </button>
+          }
+        >
+          <details>
+            <summary className="cursor-pointer text-sm text-ink-soft">Son {Math.min(jobs.length, 10)} işlemi göster</summary>
+            <div className="mt-3 space-y-2">
+              {jobs.slice(0, 10).map((j) => (
+                <details key={j.id} className="rounded-xl border border-line p-3 text-xs">
+                  <summary className="flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="font-mono text-muted">{stamp(j.createdAt)}</span>
+                    <span className="font-semibold text-ink">{j.personName}</span>
+                    <span className="text-muted">{j.summary}</span>
+                    {j.dryRun && <span className="rounded bg-amber-100 px-1.5 text-amber-800">test</span>}
+                    <span className="ml-auto font-semibold">{JOB_STATUS[j.status] ?? j.status}</span>
+                  </summary>
+                  {j.result && <p className="mt-2 text-ink-soft">{j.result}</p>}
+                  {j.log.length > 0 && <LogList lines={j.log} />}
+                </details>
+              ))}
+            </div>
+          </details>
+        </Section>
+      )}
+
+      {peopleOpen && (
+        <PeopleSheet
+          people={people}
+          email={user.email || user.displayName}
+          busy={busy}
+          onAdd={(input, done) => void act(() => api.addPerson(input), done)}
+          onDelete={deletePerson}
+          onTarget={(p) => {
+            setChosenPerson(p.id);
+            setPeopleOpen(false);
+            setTargetFormOpen(true);
+          }}
+          onClose={() => setPeopleOpen(false)}
+        />
       )}
     </main>
   );
