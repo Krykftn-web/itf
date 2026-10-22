@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  addDays,
+  type Appointment,
   CAPA_EK,
+  dateParts,
   CAPA_MERKEZ,
   IDLE_POLL_MS,
   initials,
@@ -13,6 +16,8 @@ import {
   LIVE_POLL_MS,
   normalizeState,
   pollDelay,
+  sortAppointments,
+  sortTargets,
   type State,
   type StateWire,
   stepTitle,
@@ -41,6 +46,7 @@ const target: Target = {
   targetDay: "",
   slot: "any",
   enabled: true,
+  state: "pending",
   createdAt: "",
 };
 
@@ -52,6 +58,7 @@ const state = (patch: Partial<State> = {}): State => ({
   nextOpening: "2026-10-21T20:00:00+03:00",
   people: [],
   targets: [],
+  appointments: [],
   jobs: [],
   ...patch,
 });
@@ -100,10 +107,18 @@ test("stepTitle stays generic for every branch", () => {
 });
 
 test("normalizeState turns null lists into empty ones", () => {
-  const raw: StateWire = { ...state(), people: null, targets: [{ ...target, polyclinics: null }], jobs: [{ ...job, log: null }] };
+  const raw: StateWire = {
+    ...state(),
+    people: null,
+    targets: [{ ...target, polyclinics: null, state: undefined }],
+    appointments: null,
+    jobs: [{ ...job, log: null }],
+  };
   const out = normalizeState(raw);
   assert.deepEqual(out.people, []);
   assert.deepEqual(out.targets[0]?.polyclinics, []);
+  assert.equal(out.targets[0]?.state, "pending");
+  assert.deepEqual(out.appointments, []);
   assert.deepEqual(out.jobs[0]?.log, []);
 });
 
@@ -114,4 +129,32 @@ test("pollDelay is fast near the opening or while a job runs", () => {
   assert.equal(pollDelay(state(), opening - 2 * 60_000), LIVE_POLL_MS);
   assert.equal(pollDelay(state(), opening + 2 * 60_000), LIVE_POLL_MS);
   assert.equal(pollDelay(state({ jobs: [job] }), opening - 60 * 60_000), LIVE_POLL_MS);
+});
+
+test("dateParts and addDays work on plain dates", () => {
+  assert.deepEqual(dateParts("2026-10-24"), { date: "24.10.2026", weekday: "Cumartesi" });
+  assert.deepEqual(dateParts(""), { date: "", weekday: "" });
+  assert.equal(addDays("2026-10-30", 3), "2026-11-02");
+});
+
+test("sortTargets lists open targets by date, then closed ones newest first", () => {
+  const t = (id: string, date: string, s: Target["state"]): Target => ({ ...target, id, date, state: s });
+  const sorted = sortTargets([t("a", "2026-10-20", "missed"), t("b", "2026-10-26", "pending"), t("c", "2026-10-24", "pending"), t("d", "2026-10-22", "done")]);
+  assert.deepEqual(sorted.map((x) => x.id), ["c", "b", "d", "a"]);
+});
+
+test("sortAppointments puts upcoming visits first", () => {
+  const a = (id: string, date: string): Appointment => ({
+    id,
+    targetId: "",
+    jobId: "",
+    accountId: "",
+    personName: "",
+    owner: "",
+    branch: "",
+    booking: { campus: "", branch: "", day: "", time: "10:30", date },
+    bookedAt: "2026-10-01T20:01:00+03:00",
+  });
+  const sorted = sortAppointments([a("old", "2026-10-10"), a("late", "2026-11-05"), a("soon", "2026-10-30")], "2026-10-22");
+  assert.deepEqual(sorted.map((x) => x.id), ["soon", "late", "old"]);
 });

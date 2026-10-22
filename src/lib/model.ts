@@ -38,12 +38,12 @@ export const SLOTS: { key: SlotKey; label: string; desc: string }[] = [
 ];
 
 export const DAYS = [
-  { key: "perşembe", label: "Perşembe (Öncelikli)" },
+  { key: "", label: "Farketmez" },
   { key: "pazartesi", label: "Pazartesi" },
   { key: "salı", label: "Salı" },
   { key: "çarşamba", label: "Çarşamba" },
+  { key: "perşembe", label: "Perşembe" },
   { key: "cuma", label: "Cuma" },
-  { key: "", label: "Herhangi Bir Gün (İlk Boş)" },
 ];
 
 export const RELATIONS = ["Babam", "Kendim", "Annem", "Eşim", "Diğer"] as const;
@@ -129,14 +129,7 @@ export const COMMON_BRANCHES: BranchItem[] = [
   { key: "Ağız, Diş ve Çene Cerrahisi", name: "Ağız, Diş ve Çene Cerrahisi", category: "Diğer" },
 ];
 
-export const QUICK_BRANCHES = [
-  { key: "Kalp ve Damar Cerrahisi", label: "❤️ Kalp Damar" },
-  { key: DEFAULT_BRANCH, label: "🩺 Dahiliye" },
-  { key: "Kardiyoloji", label: "🫀 Kardiyoloji" },
-  { key: "Göz Hastalıkları", label: "👁️ Göz" },
-  { key: "Kulak Burun Boğaz Hastalıkları", label: "👂 KBB" },
-  { key: "Ortopedi ve Travmatoloji", label: "🦴 Ortopedi" },
-];
+export type TargetState = "pending" | "running" | "done" | "missed" | "blocked";
 
 export type Target = {
   id: string;
@@ -145,10 +138,37 @@ export type Target = {
   branch: string;
   polyclinics: string[];
   targetDay: string;
+  date?: string;
   slot: SlotKey;
   enabled: boolean;
+  done?: boolean;
+  doneAt?: string;
+  appointmentId?: string;
+  state: TargetState;
+  waitUntil?: string;
   lastRunAt?: string;
   createdAt: string;
+};
+
+export type Booking = {
+  campus: string;
+  branch: string;
+  polyclinic?: string;
+  day: string;
+  time: string;
+  date?: string;
+};
+
+export type Appointment = {
+  id: string;
+  targetId: string;
+  jobId: string;
+  accountId: string;
+  personName: string;
+  owner: string;
+  branch: string;
+  booking: Booking;
+  bookedAt: string;
 };
 
 export type PersonView = {
@@ -176,6 +196,7 @@ export type TargetInput = {
   branch?: string;
   polyclinics?: string[];
   targetDay: string;
+  date: string;
   slot?: SlotKey;
 };
 
@@ -194,22 +215,58 @@ export type State = {
   nextOpening: string;
   people: PersonView[];
   targets: Target[];
+  appointments: Appointment[];
   jobs: Job[];
   server?: ServerInfo;
 };
 
-export type StateWire = Omit<State, "people" | "targets" | "jobs"> & {
+export type StateWire = Omit<State, "people" | "targets" | "appointments" | "jobs"> & {
   people: PersonView[] | null;
-  targets: (Omit<Target, "polyclinics"> & { polyclinics: string[] | null })[] | null;
+  targets: (Omit<Target, "polyclinics" | "state"> & { polyclinics: string[] | null; state?: TargetState })[] | null;
+  appointments?: Appointment[] | null;
   jobs: (Omit<Job, "log"> & { log: LogLine[] | null })[] | null;
 };
 
 export const normalizeState = (raw: StateWire): State => ({
   ...raw,
   people: raw.people ?? [],
-  targets: (raw.targets ?? []).map((t) => ({ ...t, polyclinics: t.polyclinics ?? [] })),
+  targets: (raw.targets ?? []).map((t) => ({ ...t, polyclinics: t.polyclinics ?? [], state: t.state ?? "pending" })),
+  appointments: raw.appointments ?? [],
   jobs: (raw.jobs ?? []).map((j) => ({ ...j, log: j.log ?? [] })),
 });
+
+const DAY_MS = 86_400_000;
+const NUMERIC_DATE = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+const WEEKDAY = new Intl.DateTimeFormat("tr-TR", { weekday: "long", timeZone: "UTC" });
+
+const utcNoon = (iso: string): Date => new Date(`${iso.slice(0, 10)}T12:00:00Z`);
+
+export const addDays = (iso: string, days: number): string => new Date(utcNoon(iso).getTime() + days * DAY_MS).toISOString().slice(0, 10);
+
+export const dateParts = (iso = ""): { date: string; weekday: string } => {
+  const d = utcNoon(iso);
+  return Number.isNaN(d.getTime()) ? { date: iso, weekday: "" } : { date: NUMERIC_DATE.format(d), weekday: WEEKDAY.format(d) };
+};
+
+const isOpen = (t: Target): boolean => t.state === "pending" || t.state === "running";
+
+export const sortTargets = (targets: Target[]): Target[] =>
+  [...targets].sort((a, b) => {
+    const order = Number(isOpen(b)) - Number(isOpen(a));
+    if (order !== 0) return order;
+    const byDate = (a.date ?? "").localeCompare(b.date ?? "");
+    return isOpen(a) ? byDate : -byDate;
+  });
+
+export const appointmentDate = (a: Appointment): string => a.booking.date || a.bookedAt.slice(0, 10);
+
+export const sortAppointments = (list: Appointment[], today: string): Appointment[] =>
+  [...list].sort((a, b) => {
+    const [da, db] = [appointmentDate(a), appointmentDate(b)];
+    const order = Number(db >= today) - Number(da >= today);
+    if (order !== 0) return order;
+    return da >= today ? da.localeCompare(db) : db.localeCompare(da);
+  });
 
 export const isLive = (job: Job): boolean => job.status === "queued" || job.status === "running";
 

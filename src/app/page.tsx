@@ -6,72 +6,83 @@ import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "rea
 
 import { api, kf } from "@/lib/kf.ts";
 import {
+  addDays,
+  type Appointment,
+  appointmentDate,
   BRANCH_GROUPS,
   CAMPUSES,
   CAPA_MERKEZ,
   COMMON_BRANCHES,
   CUSTOM,
+  dateParts,
   DAYS,
   DEFAULT_BRANCH,
   DEFAULT_ROOM,
-  fold,
   initials,
   isDahiliye,
   isLive,
   isValidTC,
+  type Job,
   type JobStatus,
   type LogLine,
   type PersonInput,
   type PersonView,
   pollDelay,
-  QUICK_BRANCHES,
   RELATIONS,
   type SlotKey,
   SLOTS,
+  sortAppointments,
+  sortTargets,
   type State,
   stepTitle,
   suggestCampus,
+  type Target,
   type TargetInput,
+  type TargetState,
 } from "@/lib/model.ts";
 
 const FIELD = "w-full rounded-xl border border-line bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent";
-const LABEL = "block text-xs font-medium text-ink-soft mb-1";
-const SUBMIT =
-  "w-full rounded-xl bg-accent py-2.5 text-sm font-bold text-white shadow-xs transition hover:bg-accent-hover active:scale-[0.98] disabled:opacity-50";
-const FORM = "mb-5 rounded-xl border border-accent/30 bg-sky-50/40 p-4 space-y-3";
-const EMPTY = "rounded-xl border border-dashed border-line p-6 text-center text-xs text-muted";
+const PRIMARY =
+  "rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-hover active:scale-[0.98] disabled:opacity-50";
+const LINK = "text-xs font-semibold hover:underline disabled:opacity-50";
+const CARD = "rounded-2xl border border-line bg-paper p-5";
 
 const CLOCK = new Intl.DateTimeFormat("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const STAMP = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 const clock = (iso: string): string => CLOCK.format(new Date(iso));
 
-const pad = (n: number): string => String(n).padStart(2, "0");
+const stamp = (iso: string): string => STAMP.format(new Date(iso));
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 const LOG_TONE: Record<LogLine["level"], string> = {
   info: "",
-  good: "text-emerald-400 font-semibold",
+  good: "text-emerald-400",
   warn: "text-rose-400",
 };
 
-const JOB_STATUS: Record<JobStatus, { label: string; tone: string }> = {
-  queued: { label: "Sırada", tone: "bg-slate-100 text-slate-700" },
-  running: { label: "Çalışıyor", tone: "bg-blue-100 text-blue-700 animate-pulse" },
-  done: { label: "Tamamlandı", tone: "bg-emerald-100 text-emerald-700" },
-  failed: { label: "Başarısız", tone: "bg-rose-100 text-rose-700" },
-  cancelled: { label: "Durduruldu", tone: "bg-slate-100 text-slate-700" },
+const JOB_STATUS: Record<JobStatus, string> = {
+  queued: "Sırada",
+  running: "Çalışıyor",
+  done: "Bitti",
+  failed: "Başarısız",
+  cancelled: "Durduruldu",
+};
+
+const TARGET_STATUS: Record<TargetState, { label: string; tone: string }> = {
+  pending: { label: "Bekliyor", tone: "bg-sky-100 text-sky-800" },
+  running: { label: "Çalışıyor", tone: "bg-blue-600 text-white animate-pulse" },
+  done: { label: "Alındı", tone: "bg-emerald-100 text-emerald-800" },
+  missed: { label: "Alınamadı", tone: "bg-slate-200 text-slate-600" },
+  blocked: { label: "10 gün kuralı", tone: "bg-amber-100 text-amber-800" },
 };
 
 const BRANCH_OPTIONS = BRANCH_GROUPS.map((g) => ({ ...g, items: COMMON_BRANCHES.filter((b) => b.category === g.category) }));
 
-const relationTone = (relation = ""): string => {
-  const r = fold(relation);
-  if (r.includes("baba")) return "bg-blue-100 text-blue-700 border-blue-200";
-  if (r.includes("kendi") || r.includes("ben")) return "bg-indigo-100 text-indigo-700 border-indigo-200";
-  if (r.includes("anne")) return "bg-rose-100 text-rose-700 border-rose-200";
-  return "bg-slate-100 text-slate-700 border-slate-200";
-};
+const slotLabel = (key: string): string => SLOTS.find((s) => s.key === key)?.label ?? "";
+
+const dayLabel = (key: string): string => DAYS.find((d) => d.key === key)?.label ?? "";
 
 const IconGoogle = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -110,109 +121,54 @@ const SignInGate = () => {
   };
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-4 py-12">
-      <div className="rounded-3xl border border-line bg-paper p-8 shadow-sm text-center">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-soft text-accent text-3xl shadow-sm border border-accent/20">
-          🏥
-        </div>
-        <h1 className="text-2xl font-black tracking-tight text-ink">İTF Randevu Asistanı</h1>
-        <p className="mt-2 text-sm text-muted">
-          İstanbul Tıp Fakültesi (Çapa) randevularını her akşam <strong>20:00</strong> açılışında saniyesinde yakalar.
-        </p>
-
-        <div className="mt-6 rounded-2xl border border-line bg-paper-2 p-4 text-left text-xs text-muted space-y-3">
-          {[
-            "Google hesabınızla tek tıkla oturum açın",
-            "Aile üyelerinizi (Babam, Kendim, Annem) ekleyin",
-            "Dahiliye 21 polikliniğini ve gün tercihinizi belirleyin",
-          ].map((step, idx) => (
-            <div key={step} className="flex items-center gap-3">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-white font-bold text-[11px]">
-                {idx + 1}
-              </span>
-              <span className="text-ink-soft">{step}</span>
-            </div>
-          ))}
-        </div>
-
+    <div className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-4 py-12">
+      <div className={`${CARD} p-8 text-center`}>
+        <h1 className="text-2xl font-bold text-ink">İTF Randevu</h1>
+        <p className="mt-2 text-sm text-muted">Kurduğunuz tarihte saat 20:00&apos;de randevuyu sizin için alır.</p>
         <button
           onClick={() => void handleSignIn()}
           disabled={busy}
-          className="mt-6 flex w-full items-center justify-center gap-3 rounded-2xl border border-line bg-white px-4 py-3.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 hover:shadow active:scale-[0.98] disabled:opacity-70"
+          className="mt-6 flex w-full items-center justify-center gap-3 rounded-xl border border-line bg-white px-4 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-70"
         >
           <IconGoogle />
-          <span>{busy ? "Google'a yönlendiriliyor…" : "Google ile Giriş Yap"}</span>
+          <span>{busy ? "Yönlendiriliyor…" : "Google ile giriş yap"}</span>
         </button>
-
-        {error && <p className="mt-3 text-xs text-hospital font-medium">{error}</p>}
+        {error && <p className="mt-3 text-xs font-medium text-hospital">{error}</p>}
       </div>
     </div>
   );
 };
 
-const CountdownBanner = ({ nextOpening }: { nextOpening: string }) => {
+const NextOpening = ({ at }: { at: string }) => {
   const [left, setLeft] = useState<number | null>(null);
 
   useEffect(() => {
-    const target = Date.parse(nextOpening);
+    const target = Date.parse(at);
     const update = () => setLeft(Math.max(0, target - Date.now()));
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
-  }, [nextOpening]);
+  }, [at]);
 
-  const urgent = left !== null && left < 10 * 60_000;
+  if (left === null) return null;
+  const urgent = left < 10 * 60_000;
+  const hours = Math.floor(left / 3_600_000);
+  const minutes = Math.floor(left / 60_000) % 60;
+  const seconds = Math.floor(left / 1000) % 60;
+  const text = left === 0 ? "şimdi" : hours > 0 ? `${hours} sa ${minutes} dk sonra` : `${minutes} dk ${seconds} sn sonra`;
 
   return (
-    <div
-      className={`rounded-2xl border p-4 shadow-sm transition ${
-        urgent ? "border-hospital/40 bg-gradient-to-r from-red-50 to-orange-50" : "border-accent/20 bg-gradient-to-r from-sky-50 via-blue-50 to-indigo-50"
-      }`}
-    >
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl shadow-xs ${
-              urgent ? "bg-red-500 text-white animate-bounce" : "bg-accent text-white"
-            }`}
-          >
-            ⏰
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-ink">20:00 Randevu Açılış Sayacı</h2>
-              <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-accent border border-accent/20">
-                Her Gün 20:00
-              </span>
-            </div>
-            <p className="text-xs text-muted mt-0.5">
-              İTF sistemi 20:00:00&apos;da açılır. Botumuz <strong>19:59:45</strong>&apos;te nöbete girer.
-            </p>
-          </div>
-        </div>
-
-        {left !== null && (
-          <div className="flex items-center gap-1.5 self-end sm:self-auto font-mono text-xs font-bold bg-white px-3.5 py-2 rounded-xl border border-line shadow-xs">
-            <span className="text-muted text-[10px] uppercase font-sans mr-1">Kalan:</span>
-            <span className="rounded bg-paper-2 px-1.5 py-0.5 text-accent">{pad(Math.floor(left / 3_600_000))}s</span>
-            <span>:</span>
-            <span className="rounded bg-paper-2 px-1.5 py-0.5 text-accent">{pad(Math.floor(left / 60_000) % 60)}d</span>
-            <span>:</span>
-            <span className={`rounded px-1.5 py-0.5 ${urgent ? "bg-red-100 text-red-600" : "bg-paper-2 text-accent"}`}>
-              {pad(Math.floor(left / 1000) % 60)}sn
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
+    <p className={`rounded-xl px-4 py-2.5 text-sm ${urgent ? "bg-red-50 text-red-700" : "bg-paper-2 text-ink-soft"}`}>
+      Sonraki açılış <strong>{dateParts(at).date} 20:00</strong> · {text}
+    </p>
   );
 };
 
-const LogList = ({ lines, className }: { lines: LogLine[]; className: string }) => (
-  <div className={`rounded-lg bg-slate-900 p-3 font-mono text-[11px] text-slate-200 overflow-y-auto space-y-1 ${className}`}>
+const LogList = ({ lines }: { lines: LogLine[] }) => (
+  <div className="mt-2 max-h-48 space-y-0.5 overflow-y-auto rounded-lg bg-slate-900 p-3 font-mono text-[11px] text-slate-200">
     {lines.map((l, idx) => (
-      <div key={idx} className="leading-relaxed">
-        <span className="text-slate-500 mr-2">{clock(l.at)}</span>
+      <div key={idx}>
+        <span className="mr-2 text-slate-500">{clock(l.at)}</span>
         <span className={LOG_TONE[l.level]}>{l.message}</span>
         {(l.count ?? 0) > 1 && <span className="ml-1.5 text-slate-500">×{l.count}</span>}
       </div>
@@ -220,36 +176,52 @@ const LogList = ({ lines, className }: { lines: LogLine[]; className: string }) 
   </div>
 );
 
-const SectionHead = ({ icon, title, hint, children }: { icon: string; title: string; hint?: string; children?: ReactNode }) => (
-  <div className="flex items-center justify-between mb-4">
-    <div>
-      <h2 className="text-base font-bold text-ink flex items-center gap-2">
-        <span>{icon}</span> {title}
-      </h2>
-      {hint && <p className="text-xs text-muted mt-0.5">{hint}</p>}
+const Section = ({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) => (
+  <section className={CARD}>
+    <div className="mb-4 flex items-center justify-between gap-3">
+      <h2 className="text-base font-bold text-ink">{title}</h2>
+      {action}
     </div>
     {children}
-  </div>
+  </section>
 );
 
-const ToggleButton = ({ open, label, onClick }: { open: boolean; label: string; onClick: () => void }) => (
-  <button
-    onClick={onClick}
-    className="rounded-xl bg-accent hover:bg-accent-hover text-white px-3.5 py-2 text-xs font-semibold shadow-xs transition active:scale-[0.98] flex items-center gap-1.5"
-  >
-    <span>{open ? "✕ Vazgeç" : label}</span>
-  </button>
-);
-
-const Field = ({ label, aside, children }: { label: string; aside?: ReactNode; children: ReactNode }) => (
+const Field = ({ label, children }: { label: string; children: ReactNode }) => (
   <label className="block">
-    <span className="flex justify-between items-center mb-1 text-xs font-medium text-ink-soft">
-      {label}
-      {aside}
-    </span>
+    <span className="mb-1 block text-xs font-medium text-ink-soft">{label}</span>
     {children}
   </label>
 );
+
+const DateBadge = ({ iso }: { iso?: string }) => {
+  const { date, weekday } = dateParts(iso);
+  return (
+    <div className="w-14 shrink-0 text-center">
+      <div className="text-sm font-bold text-ink">{iso ? date.slice(0, 5) : "—"}</div>
+      <div className="text-[11px] text-muted">{weekday}</div>
+    </div>
+  );
+};
+
+const AppointmentCard = ({ appt, past }: { appt: Appointment; past: boolean }) => {
+  const b = appt.booking;
+  const { date, weekday } = dateParts(appointmentDate(appt));
+  return (
+    <div className={`rounded-xl border p-4 ${past ? "border-line bg-paper-2 opacity-60" : "border-emerald-300 bg-emerald-50"}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="text-lg font-bold text-ink">
+          {b.date ? `${date} ${weekday}` : b.day} · {b.time}
+        </div>
+        <span className="text-xs text-muted">{stamp(appt.bookedAt)} alındı</span>
+      </div>
+      <div className="mt-1 text-sm text-ink-soft">
+        {appt.personName} · {b.branch || appt.branch}
+        {b.polyclinic && ` · ${b.polyclinic}`}
+      </div>
+      {b.campus && <div className="text-xs text-muted">{b.campus}</div>}
+    </div>
+  );
+};
 
 const EMPTY_PERSON: PersonInput = { name: "", relation: RELATIONS[0], tc: "", phone: "", fatherName: "", birthDate: "" };
 
@@ -272,101 +244,48 @@ const PersonForm = ({ busy, onSave }: { busy: boolean; onSave: (input: PersonInp
   };
 
   return (
-    <form onSubmit={submit} className={FORM}>
-      <h3 className="text-xs font-bold uppercase tracking-wider text-accent">Yeni Kişi Kaydı</h3>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Ad Soyad">
-          <input
-            type="text"
-            required
-            placeholder="Örn: Mehmet Kaftanoğlu"
-            value={form.name}
-            onChange={(e) => update({ name: e.target.value })}
-            className={FIELD}
-          />
+    <form onSubmit={submit} className="mb-4 space-y-3 rounded-xl bg-paper-2 p-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Ad soyad">
+          <input type="text" required value={form.name} onChange={(e) => update({ name: e.target.value })} className={FIELD} />
         </Field>
-
-        <div>
-          <span className={LABEL}>Yakınlık / Etiket</span>
-          <div className="flex gap-1.5 flex-wrap">
+        <Field label="Yakınlık">
+          <select value={form.relation} onChange={(e) => update({ relation: e.target.value })} className={FIELD}>
             {RELATIONS.map((r) => (
-              <button
-                type="button"
-                key={r}
-                onClick={() => update({ relation: r })}
-                className={`rounded-lg px-2.5 py-1 text-xs font-semibold border transition ${
-                  form.relation === r ? "bg-accent text-white border-accent" : "bg-white text-ink-soft border-line"
-                }`}
-              >
-                {r}
-              </button>
+              <option key={r}>{r}</option>
             ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field
-          label="T.C. Kimlik No"
-          aside={
-            form.tc.length === 11 && (
-              <span className={`text-[11px] font-bold ${tcValid ? "text-emerald-600" : "text-rose-500"}`}>
-                {tcValid ? "✓ Geçerli T.C." : "✕ Hatalı Numara"}
-              </span>
-            )
-          }
-        >
+          </select>
+        </Field>
+        <Field label={form.tc.length === 11 && !tcValid ? "T.C. kimlik no · hatalı" : "T.C. kimlik no"}>
           <input
             type="text"
             inputMode="numeric"
             required
             maxLength={11}
-            placeholder="11 Haneli T.C."
             value={form.tc}
             onChange={(e) => update({ tc: e.target.value.replace(/\D/g, "") })}
-            className={`${FIELD} font-mono`}
+            className={`${FIELD} font-mono ${form.tc.length === 11 && !tcValid ? "border-rose-400" : ""}`}
           />
         </Field>
-
-        <Field label="Cep Telefonu">
-          <input
-            type="tel"
-            required
-            placeholder="0532..."
-            value={form.phone}
-            onChange={(e) => update({ phone: e.target.value })}
-            className={FIELD}
-          />
+        <Field label="Cep telefonu">
+          <input type="tel" required placeholder="05XX…" value={form.phone} onChange={(e) => update({ phone: e.target.value })} className={FIELD} />
         </Field>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Baba Adı">
+        <Field label="Baba adı">
+          <input type="text" required value={form.fatherName} onChange={(e) => update({ fatherName: e.target.value })} className={FIELD} />
+        </Field>
+        <Field label="Doğum tarihi">
           <input
             type="text"
             required
-            placeholder="Örn: Hasan"
-            value={form.fatherName}
-            onChange={(e) => update({ fatherName: e.target.value })}
-            className={FIELD}
-          />
-        </Field>
-
-        <Field label="Doğum Tarihi (GG.AA.YYYY)">
-          <input
-            type="text"
-            required
-            placeholder="01.01.1960"
+            placeholder="GG.AA.YYYY"
             value={form.birthDate}
             onChange={(e) => update({ birthDate: e.target.value })}
             className={FIELD}
           />
         </Field>
       </div>
-
-      <button type="submit" disabled={busy || !tcValid} className={SUBMIT}>
-        Kişiyi Güvenle Kaydet
+      <button type="submit" disabled={busy || !tcValid} className={PRIMARY}>
+        Kaydet
       </button>
     </form>
   );
@@ -376,11 +295,13 @@ type TargetFormProps = {
   people: PersonView[];
   personId: string;
   onPersonChange: (id: string) => void;
+  firstDate: string;
   busy: boolean;
   onSave: (input: TargetInput) => void;
 };
 
-const TargetForm = ({ people, personId, onPersonChange, busy, onSave }: TargetFormProps) => {
+const TargetForm = ({ people, personId, onPersonChange, firstDate, busy, onSave }: TargetFormProps) => {
+  const [date, setDate] = useState(firstDate);
   const [campus, setCampus] = useState(CAPA_MERKEZ);
   const [branch, setBranch] = useState(DEFAULT_BRANCH);
   const [customBranch, setCustomBranch] = useState("");
@@ -401,85 +322,45 @@ const TargetForm = ({ people, personId, onPersonChange, busy, onSave }: TargetFo
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!personId) {
-      alert("Lütfen hedefin atanacağı kişiyi seçin.");
-      return;
-    }
-    if (!branchName) {
-      alert("Lütfen geçerli bir branş seçin veya yazın.");
-      return;
-    }
-    onSave({
-      personId,
-      campus: campus.trim(),
-      branch: branchName,
-      polyclinics: dahiliye && roomName ? [roomName] : [],
-      targetDay: day,
-      slot,
-    });
+    if (personId && branchName)
+      onSave({
+        personId,
+        date,
+        campus: campus.trim(),
+        branch: branchName,
+        polyclinics: dahiliye && roomName ? [roomName] : [],
+        targetDay: day,
+        slot,
+      });
   };
 
   return (
-    <form onSubmit={submit} className={FORM}>
-      <h3 className="text-xs font-bold uppercase tracking-wider text-accent">Yeni Hedef Oluştur</h3>
-
-      <Field label="Kime Randevu Alınacak?">
-        <select value={personId} onChange={(e) => onPersonChange(e.target.value)} className={`${FIELD} font-semibold`}>
-          {people.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} ({p.relation || "Kişi"}) — TC: {p.maskedTc}
-            </option>
-          ))}
-        </select>
-      </Field>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <Field label="Yerleşke (Şube / Kampüs)">
-            <select value={campus} onChange={(e) => setCampus(e.target.value)} className={`${FIELD} font-semibold`}>
-              {CAMPUSES.map((c) => (
-                <option key={c.key} value={c.key}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <p className="text-[11px] text-muted mt-1 leading-snug">
-            ℹ️ {CAMPUSES.find((c) => c.key === campus)?.desc ?? "Otomatik veya serbest seçim"}
-          </p>
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <span className="block text-xs font-medium text-ink-soft">Ana Branş</span>
-            <span className="text-[10px] text-muted">Hızlı Seçim:</span>
-          </div>
-
-          <div className="flex flex-wrap gap-1 mb-2">
-            {QUICK_BRANCHES.map((quick) => (
-              <button
-                type="button"
-                key={quick.key}
-                onClick={() => pickBranch(quick.key)}
-                className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold border transition ${
-                  branch === quick.key
-                    ? "bg-accent text-white border-accent shadow-xs"
-                    : "bg-white text-ink-soft border-line hover:border-accent/40"
-                }`}
-              >
-                {quick.label}
-              </button>
+    <form onSubmit={submit} className="mb-4 space-y-3 rounded-xl bg-paper-2 p-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Kişi">
+          <select value={personId} onChange={(e) => onPersonChange(e.target.value)} className={FIELD}>
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
             ))}
-          </div>
-
-          <select
-            aria-label="Ana Branş"
-            value={branch}
-            onChange={(e) => pickBranch(e.target.value)}
-            className={`${FIELD} font-semibold`}
-          >
+          </select>
+        </Field>
+        <Field label="Tarih (o gün 20:00'de bir kez çalışır)">
+          <input
+            type="date"
+            required
+            min={firstDate}
+            max={addDays(firstDate, 90)}
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className={FIELD}
+          />
+        </Field>
+        <Field label="Branş">
+          <select value={branch} onChange={(e) => pickBranch(e.target.value)} className={FIELD}>
             {BRANCH_OPTIONS.map((g) => (
-              <optgroup key={g.category} label={g.label}>
+              <optgroup key={g.category} label={g.category}>
                 {g.items.map((b) => (
                   <option key={b.key} value={b.key}>
                     {b.name}
@@ -487,58 +368,45 @@ const TargetForm = ({ people, personId, onPersonChange, busy, onSave }: TargetFo
                 ))}
               </optgroup>
             ))}
-            <option value={CUSTOM}>✏️ Diğer (Özel Branş Yaz…)</option>
+            <option value={CUSTOM}>Listede yok, yazacağım</option>
           </select>
-        </div>
-      </div>
-
-      {branch === CUSTOM && (
-        <label className="block">
-          <span className="block text-xs font-medium text-accent mb-1">Özel Branş Adı</span>
-          <input
-            type="text"
-            required
-            placeholder="Örn: Kalp ve Damar Cerrahisi, Radyoloji, vb."
-            value={customBranch}
-            onChange={(e) => setCustomBranch(e.target.value)}
-            className={`${FIELD} border-accent`}
-          />
-        </label>
-      )}
-
-      {dahiliye ? (
-        <div>
-          <Field label="Dahiliye Poliklinik Odası">
-            <select value={room} onChange={(e) => setRoom(e.target.value)} className={`${FIELD} font-semibold`}>
-              <option value={DEFAULT_ROOM}>{DEFAULT_ROOM} (Öncelikli)</option>
-              <option value="Dahiliye">Herhangi bir Dahiliye Odası</option>
-              <option value={CUSTOM}>✏️ Özel Oda Numarası Yaz…</option>
+        </Field>
+        {branch === CUSTOM && (
+          <Field label="Branş adı">
+            <input type="text" required value={customBranch} onChange={(e) => setCustomBranch(e.target.value)} className={FIELD} />
+          </Field>
+        )}
+        {dahiliye && (
+          <Field label="Poliklinik odası">
+            <select value={room} onChange={(e) => setRoom(e.target.value)} className={FIELD}>
+              <option value={DEFAULT_ROOM}>{DEFAULT_ROOM}</option>
+              <option value="Dahiliye">Herhangi bir Dahiliye odası</option>
+              <option value={CUSTOM}>Başka oda yazacağım</option>
             </select>
           </Field>
-
-          {room === CUSTOM && (
+        )}
+        {dahiliye && room === CUSTOM && (
+          <Field label="Oda adı">
             <input
               type="text"
               required
-              aria-label="Özel oda numarası"
-              placeholder="Örn: Dahiliye 5, Dahiliye 12, vb."
+              placeholder="Örn. Dahiliye 5"
               value={customRoom}
               onChange={(e) => setCustomRoom(e.target.value)}
-              className={`${FIELD} border-accent mt-2`}
+              className={FIELD}
             />
-          )}
-        </div>
-      ) : (
-        <div className="rounded-xl bg-blue-50/60 border border-blue-200/60 p-2.5 text-[11px] text-blue-900 flex items-center gap-2">
-          <span>✨</span>
-          <span>
-            <strong>{branchName || "Bu branşta"}</strong> doğrudan randevu takvimi açılır, poliklinik oda seçimi adımı yoktur.
-          </span>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Hedef Gün">
+          </Field>
+        )}
+        <Field label="Yerleşke">
+          <select value={campus} onChange={(e) => setCampus(e.target.value)} className={FIELD}>
+            {CAMPUSES.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.key ? c.name : "Farketmez"}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Randevu günü">
           <select value={day} onChange={(e) => setDay(e.target.value)} className={FIELD}>
             {DAYS.map((d) => (
               <option key={d.key} value={d.key}>
@@ -547,8 +415,7 @@ const TargetForm = ({ people, personId, onPersonChange, busy, onSave }: TargetFo
             ))}
           </select>
         </Field>
-
-        <Field label="Saat Tercihi">
+        <Field label="Saat">
           <select value={slot} onChange={(e) => setSlot(e.target.value as SlotKey)} className={FIELD}>
             {SLOTS.map((s) => (
               <option key={s.key} value={s.key}>
@@ -558,11 +425,76 @@ const TargetForm = ({ people, personId, onPersonChange, busy, onSave }: TargetFo
           </select>
         </Field>
       </div>
-
-      <button type="submit" disabled={busy} className={SUBMIT}>
-        Hedefi Kaydet ve Nöbete Al
+      <button type="submit" disabled={busy} className={PRIMARY}>
+        Hedefi kaydet
       </button>
     </form>
+  );
+};
+
+const TargetRow = ({
+  target,
+  person,
+  job,
+  today,
+  busy,
+  onTest,
+  onStop,
+  onDelete,
+}: {
+  target: Target;
+  person?: PersonView;
+  job?: Job;
+  today: string;
+  busy: boolean;
+  onTest: () => void;
+  onStop: (jobId: string) => void;
+  onDelete: () => void;
+}) => {
+  const status =
+    target.state === "pending" && target.date === today ? { label: "Bu akşam 20:00", tone: "bg-accent text-white" } : TARGET_STATUS[target.state];
+  const closed = target.state === "done" || target.state === "missed" || target.state === "blocked";
+  const details = [
+    target.polyclinics.join(", "),
+    target.campus || "Yerleşke farketmez",
+    `Gün: ${dayLabel(target.targetDay)}`,
+    slotLabel(target.slot),
+  ].filter(Boolean);
+
+  return (
+    <div className={`flex items-start gap-3 rounded-xl border p-3 ${closed ? "border-line bg-paper-2 opacity-60" : "border-line bg-white"}`}>
+      <DateBadge iso={target.date} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-sm font-semibold text-ink">
+            {person?.name ?? "Silinmiş kişi"} · {target.branch}
+          </div>
+          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${status.tone}`}>{status.label}</span>
+        </div>
+        <div className="text-xs text-muted">{details.join(" · ")}</div>
+        {target.state === "blocked" && target.waitUntil && (
+          <div className="text-xs text-amber-700">Son randevudan 10 gün geçmeden çalışmaz ({stamp(target.waitUntil)})</div>
+        )}
+        {job && <div className="text-xs text-accent">{stepTitle(job.step)}</div>}
+        <div className="mt-1.5 flex gap-4">
+          {job && (
+            <button onClick={() => onStop(job.id)} disabled={busy} className={`${LINK} text-rose-600`}>
+              Durdur
+            </button>
+          )}
+          {target.state === "pending" && !job && (
+            <button onClick={onTest} disabled={busy} className={`${LINK} text-accent`} title="Randevu almadan son adıma kadar dener">
+              Test et
+            </button>
+          )}
+          {!job && (
+            <button onClick={onDelete} disabled={busy} className={`${LINK} text-muted`}>
+              Sil
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -611,7 +543,6 @@ const Dashboard = ({ user }: { user: User }) => {
   const [personFormOpen, setPersonFormOpen] = useState(false);
   const [targetFormOpen, setTargetFormOpen] = useState(false);
   const [chosenPerson, setChosenPerson] = useState("");
-  const [expandedJob, setExpandedJob] = useState<string | null>(null);
 
   const act = async (task: () => Promise<unknown>, onDone?: () => void) => {
     setBusy(true);
@@ -620,323 +551,162 @@ const Dashboard = ({ user }: { user: User }) => {
       onDone?.();
       await reload();
     } catch (err: unknown) {
-      alert(`Hata: ${errorText(err)}`);
+      alert(errorText(err));
     } finally {
       setBusy(false);
     }
   };
 
   const deletePerson = (person: PersonView) => {
-    if (confirm(`"${person.name}" adlı kişiyi ve ilişkili hedefleri silmek istediğinizden emin misiniz?`))
-      void act(() => api.deletePerson(person.id));
+    if (confirm(`${person.name} ve hedefleri silinsin mi?`)) void act(() => api.deletePerson(person.id));
   };
 
-  const runTarget = (id: string, dryRun: boolean) => void act(async () => setExpandedJob((await api.runTarget(id, dryRun)).id));
-
-  const cancelJob = (id: string) => void act(() => api.cancelJob(id));
-
   const people = state?.people ?? [];
-  const targets = state?.targets ?? [];
+  const targets = sortTargets(state?.targets ?? []);
   const jobs = state?.jobs ?? [];
-  const liveJobs = jobs.filter(isLive);
+  const today = state?.now.slice(0, 10) ?? "";
+  const appointments = sortAppointments(state?.appointments ?? [], today);
+  const firstDate = state?.nextOpening.slice(0, 10) ?? today;
   const peopleById = new Map(people.map((p) => [p.id, p]));
+  const liveByTarget = new Map(jobs.filter(isLive).map((j) => [j.targetId, j]));
   const personId = peopleById.has(chosenPerson) ? chosenPerson : (people[0]?.id ?? "");
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 space-y-6">
-      <header className="rounded-2xl border border-line bg-paper p-5 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white text-2xl shadow-sm">
-              🏥
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-extrabold tracking-tight text-ink">İTF Randevu Botu</h1>
-                <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-bold text-accent border border-accent/20">
-                  Çapa v2.0
-                </span>
-              </div>
-              <p className="text-xs text-muted">İstanbul Tıp Fakültesi · Çoklu Kişi & Hedef Otomasyonu</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 self-end md:self-auto">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              Tünel & Server Aktif
-            </span>
-            <div className="flex items-center gap-2 rounded-xl bg-paper-2 px-3 py-1.5 text-xs border border-line">
-              <span className="font-medium text-ink-soft truncate max-w-[150px] sm:max-w-none">{user.email || user.displayName}</span>
-              <button onClick={() => void kf.auth.signOut()} className="text-hospital font-semibold hover:underline ml-1" title="Oturumu Kapat">
-                Çıkış
-              </button>
-            </div>
-          </div>
+    <main className="mx-auto max-w-3xl space-y-5 px-4 py-8">
+      <header className="flex items-center justify-between gap-3">
+        <h1 className="text-xl font-bold text-ink">İTF Randevu</h1>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="max-w-[160px] truncate text-muted sm:max-w-none">{user.email || user.displayName}</span>
+          <button onClick={() => void kf.auth.signOut()} className="font-semibold text-hospital hover:underline">
+            Çıkış
+          </button>
         </div>
       </header>
 
-      {state?.nextOpening && <CountdownBanner nextOpening={state.nextOpening} />}
+      {state?.nextOpening && <NextOpening at={state.nextOpening} />}
 
-      {liveJobs.length > 0 && (
-        <section className="rounded-2xl border-2 border-accent bg-sky-50/50 p-5 shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="flex h-3 w-3 rounded-full bg-accent animate-ping" />
-              <h2 className="text-sm font-bold text-accent">Canlı İşlem Sürüyor ({liveJobs.length})</h2>
-            </div>
-            <span className="text-xs text-muted font-medium">Anlık güncelleniyor</span>
-          </div>
+      {error && <div className="rounded-xl border border-hospital/30 bg-hospital-soft p-3 text-sm text-hospital">{error}</div>}
 
-          <div className="space-y-3">
-            {liveJobs.map((j) => (
-              <div key={j.id} className="rounded-xl border border-accent/20 bg-white p-4 shadow-xs space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-sm text-ink">{j.personName || "Randevu İşi"}</span>
-                    <span className="text-xs text-muted ml-2">{j.summary || "Hedefe gidiliyor"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {j.dryRun && <span className="rounded-md bg-amber-100 text-amber-800 px-2 py-0.5 text-[11px] font-bold">TEST MODU</span>}
-                    <button
-                      onClick={() => cancelJob(j.id)}
-                      disabled={busy}
-                      className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:opacity-50"
-                    >
-                      Durdur
-                    </button>
-                  </div>
-                </div>
-
-                <div className="rounded-lg bg-paper-2 p-2.5 text-xs font-medium text-accent border border-line flex items-center gap-2">
-                  <span className="animate-spin text-sm">⏳</span>
-                  <span>{stepTitle(j.step)}</span>
-                </div>
-
-                {j.log.length > 0 && <LogList lines={j.log.slice(-6)} className="max-h-36" />}
-              </div>
+      {appointments.length > 0 && (
+        <Section title="Alınan randevular">
+          <div className="space-y-2">
+            {appointments.map((a) => (
+              <AppointmentCard key={a.id} appt={a} past={appointmentDate(a) < today} />
             ))}
           </div>
-        </section>
+        </Section>
       )}
 
-      {error && <div className="rounded-2xl border border-hospital/30 bg-hospital-soft p-4 text-sm text-hospital">{error}</div>}
-
-      <section className="rounded-2xl border border-line bg-paper p-6 shadow-xs">
-        <SectionHead icon="👥" title="Kişilerim & Aile Üyeleri" hint="Randevu alınacak kişileri ve T.C. kimlik bilgilerini buradan yönetin.">
-          <ToggleButton open={personFormOpen} label="+ Yeni Kişi Ekle" onClick={() => setPersonFormOpen(!personFormOpen)} />
-        </SectionHead>
-
-        {personFormOpen && (
-          <PersonForm busy={busy} onSave={(input) => void act(() => api.addPerson(input), () => setPersonFormOpen(false))} />
-        )}
-
-        {people.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {people.map((person) => {
-              const targetCount = targets.filter((t) => t.accountId === person.id).length;
-              return (
-                <div
-                  key={person.id}
-                  className="rounded-xl border border-line bg-paper-2 p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-accent/40 transition"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 font-bold text-sm">
-                        {initials(person.name)}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-sm text-ink">{person.name}</h4>
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${relationTone(person.relation)}`}>
-                            {person.relation || "Kişi"}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-muted mt-1 font-mono">
-                          <span>TC: {person.maskedTc}</span>
-                          <span>Tel: {person.maskedPhone}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => deletePerson(person)}
-                      disabled={busy}
-                      className="text-xs text-muted hover:text-hospital p-1 transition disabled:opacity-50"
-                      title="Kişiyi Sil"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-line/60 pt-2 text-xs">
-                    <span className="text-muted">
-                      {targetCount > 0 ? (
-                        <span className="font-semibold text-accent">🎯 {targetCount} aktif hedef var</span>
-                      ) : (
-                        <span>Henüz hedef yok</span>
-                      )}
-                    </span>
-                    <button
-                      onClick={() => {
-                        setChosenPerson(person.id);
-                        setTargetFormOpen(true);
-                      }}
-                      className="text-accent font-semibold hover:underline"
-                    >
-                      + Hedef Belirle
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className={EMPTY}>
-            Henüz kimse eklenmedi. Randevu alabilmek için yukarıdaki &quot;+ Yeni Kişi Ekle&quot; butonu ile kendinizi veya babanızı ekleyin.
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-2xl border border-line bg-paper p-6 shadow-xs">
-        <SectionHead icon="🎯" title="Randevu Hedefleri" hint="Hangi aile üyesi için hangi poliklinik ve güne randevu aranacak?">
-          {people.length > 0 && (
-            <ToggleButton open={targetFormOpen} label="+ Yeni Hedef Ekle" onClick={() => setTargetFormOpen(!targetFormOpen)} />
-          )}
-        </SectionHead>
-
+      <Section
+        title="Hedefler"
+        action={
+          people.length > 0 && (
+            <button onClick={() => setTargetFormOpen(!targetFormOpen)} className={PRIMARY}>
+              {targetFormOpen ? "Vazgeç" : "Yeni hedef"}
+            </button>
+          )
+        }
+      >
         {targetFormOpen && people.length > 0 && (
           <TargetForm
             people={people}
             personId={personId}
             onPersonChange={setChosenPerson}
+            firstDate={firstDate}
             busy={busy}
             onSave={(input) => void act(() => api.addTarget(input), () => setTargetFormOpen(false))}
           />
         )}
 
-        {targets.length > 0 ? (
-          <div className="space-y-3">
-            {targets.map((target) => {
-              const person = peopleById.get(target.accountId);
-              const slot = SLOTS.find((s) => s.key === target.slot);
-              const rooms = target.polyclinics.length > 0 ? target.polyclinics.join(", ") : isDahiliye(target.branch) ? DEFAULT_ROOM : "";
-              const running = liveJobs.some((j) => j.targetId === target.id);
-              return (
-                <div
-                  key={target.id}
-                  className="rounded-xl border border-line bg-paper-2 p-4 shadow-xs flex flex-col md:flex-row md:items-center md:justify-between gap-3 hover:border-accent/40 transition"
-                >
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="rounded-lg bg-blue-600 text-white px-2.5 py-0.5 text-xs font-bold shadow-xs">
-                      👤 {person ? `${person.name} (${person.relation || "Kişi"})` : "Bilinmeyen Kişi"}
-                    </span>
-                    <span className="rounded-lg bg-sky-100 text-sky-800 border border-sky-200 px-2 py-0.5 text-xs font-bold">
-                      📍 {target.campus || "Herhangi bir yerleşke"} · {target.branch || DEFAULT_BRANCH}
-                    </span>
-                    {rooms && (
-                      <span className="rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-xs font-bold">
-                        🏥 {rooms}
-                      </span>
-                    )}
-                    <span className="rounded-lg bg-paper border border-line px-2 py-0.5 text-xs font-medium text-ink-soft">
-                      📅 {target.targetDay ? target.targetDay.toLocaleUpperCase("tr") : "İlk Boş Gün"}
-                    </span>
-                    {slot && (
-                      <span className="rounded-lg bg-paper border border-line px-2 py-0.5 text-xs font-medium text-muted">⏰ {slot.label}</span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-line/60">
-                    <button
-                      onClick={() => runTarget(target.id, true)}
-                      disabled={busy || running}
-                      className="rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1.5 text-xs font-bold transition active:scale-[0.98] disabled:opacity-50"
-                      title="Randevu almadan son adıma kadar test eder"
-                    >
-                      🧪 Test Et
-                    </button>
-                    <button
-                      onClick={() => runTarget(target.id, false)}
-                      disabled={busy || running}
-                      className="rounded-lg bg-accent hover:bg-accent-hover text-white px-3 py-1.5 text-xs font-bold shadow-xs transition active:scale-[0.98] disabled:opacity-50"
-                      title="Hemen randevuyu alır"
-                    >
-                      ⚡ Şimdi Al
-                    </button>
-                    <button
-                      onClick={() => void act(() => api.removeTarget(target.id))}
-                      disabled={busy}
-                      className="rounded-lg border border-line hover:border-rose-300 hover:text-rose-600 px-2.5 py-1.5 text-xs text-muted transition disabled:opacity-50"
-                      title="Hedefi Sil"
-                    >
-                      Sil
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        {people.length === 0 ? (
+          <p className="text-sm text-muted">Önce aşağıdan bir kişi ekleyin.</p>
+        ) : targets.length === 0 ? (
+          <p className="text-sm text-muted">Henüz hedef yok. Tarih ve branş seçip bir hedef kurun.</p>
         ) : (
-          <div className={EMPTY}>Henüz aktif randevu hedefi oluşturulmadı.</div>
+          <div className="space-y-2">
+            {targets.map((t) => (
+              <TargetRow
+                key={t.id}
+                target={t}
+                person={peopleById.get(t.accountId)}
+                job={liveByTarget.get(t.id)}
+                today={today}
+                busy={busy}
+                onTest={() => void act(() => api.runTarget(t.id, true))}
+                onStop={(jobId) => void act(() => api.cancelJob(jobId))}
+                onDelete={() => void act(() => api.removeTarget(t.id))}
+              />
+            ))}
+          </div>
         )}
-      </section>
+      </Section>
+
+      <Section
+        title="Kişiler"
+        action={
+          <button onClick={() => setPersonFormOpen(!personFormOpen)} className={PRIMARY}>
+            {personFormOpen ? "Vazgeç" : "Yeni kişi"}
+          </button>
+        }
+      >
+        {personFormOpen && <PersonForm busy={busy} onSave={(input) => void act(() => api.addPerson(input), () => setPersonFormOpen(false))} />}
+
+        {people.length === 0 ? (
+          <p className="text-sm text-muted">Randevu alınacak kişiyi ekleyin.</p>
+        ) : (
+          <div className="space-y-2">
+            {people.map((p) => (
+              <div key={p.id} className="flex items-center gap-3 rounded-xl border border-line p-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-sm font-bold text-accent">
+                  {initials(p.name)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-ink">
+                    {p.name} <span className="font-normal text-muted">· {p.relation || "Kişi"}</span>
+                  </div>
+                  <div className="font-mono text-xs text-muted">{p.maskedTc}</div>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setChosenPerson(p.id);
+                      setTargetFormOpen(true);
+                    }}
+                    className={`${LINK} text-accent`}
+                  >
+                    Hedef kur
+                  </button>
+                  <button onClick={() => deletePerson(p)} disabled={busy} className={`${LINK} text-muted`}>
+                    Sil
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
 
       {jobs.length > 0 && (
-        <section className="rounded-2xl border border-line bg-paper p-6 shadow-xs">
-          <SectionHead icon="📋" title="Randevu Takip & İşlem Kayıtları">
-            <span className="text-xs text-muted">Son işlemler</span>
-          </SectionHead>
-
-          <div className="space-y-3">
-            {jobs.slice(0, 10).map((j) => {
-              const expanded = expandedJob === j.id;
-              const status = JOB_STATUS[j.status] ?? { label: j.status, tone: "bg-slate-100 text-slate-700" };
-              return (
-                <div key={j.id} className="rounded-xl border border-line bg-paper-2 p-3.5 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-muted">{clock(j.createdAt)}</span>
-                      <span className="font-bold text-ink">{j.personName || "İş"}</span>
-                      {j.summary && <span className="text-muted text-[11px]">({j.summary})</span>}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {j.dryRun && <span className="rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-bold">TEST</span>}
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${status.tone}`}>{status.label}</span>
-                    </div>
-                  </div>
-
-                  {j.result &&
-                    (j.status === "done" ? (
-                      <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2 text-xs font-semibold text-emerald-800">🎉 {j.result}</div>
-                    ) : (
-                      <div className="rounded-lg bg-rose-50 border border-rose-200 p-2 text-xs font-semibold text-rose-800">⚠️ {j.result}</div>
-                    ))}
-
-                  <div className="flex items-center justify-between text-[11px] pt-1">
-                    <button onClick={() => setExpandedJob(expanded ? null : j.id)} className="text-accent hover:underline font-semibold">
-                      {expanded ? "▲ Logları Gizle" : `▼ Konsol Loglarını Gör (${j.log.length})`}
-                    </button>
-                    {isLive(j) && (
-                      <button
-                        onClick={() => cancelJob(j.id)}
-                        disabled={busy}
-                        className="text-rose-600 hover:underline font-semibold disabled:opacity-50"
-                      >
-                        İşlemi Durdur
-                      </button>
-                    )}
-                  </div>
-
-                  {expanded && j.log.length > 0 && <LogList lines={j.log} className="max-h-48" />}
-                </div>
-              );
-            })}
+        <details className={CARD}>
+          <summary className="cursor-pointer text-sm font-semibold text-ink-soft">İşlem geçmişi</summary>
+          <div className="mt-3 space-y-2">
+            {jobs.slice(0, 10).map((j) => (
+              <details key={j.id} className="rounded-xl border border-line p-3 text-xs">
+                <summary className="flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="font-mono text-muted">{stamp(j.createdAt)}</span>
+                  <span className="font-semibold text-ink">{j.personName}</span>
+                  <span className="text-muted">{j.summary}</span>
+                  {j.dryRun && <span className="rounded bg-amber-100 px-1.5 text-amber-800">test</span>}
+                  <span className="ml-auto font-semibold">{JOB_STATUS[j.status] ?? j.status}</span>
+                </summary>
+                {j.result && <p className="mt-2 text-ink-soft">{j.result}</p>}
+                {j.log.length > 0 && <LogList lines={j.log} />}
+              </details>
+            ))}
           </div>
-        </section>
+        </details>
       )}
-    </div>
+    </main>
   );
 };
 
@@ -946,10 +716,7 @@ const Home = () => {
   if (loading && !user)
     return (
       <div className="grid min-h-dvh place-items-center bg-ground">
-        <div className="text-center text-sm text-muted">
-          <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-          Oturum kontrol ediliyor…
-        </div>
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
       </div>
     );
 
